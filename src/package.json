@@ -1,0 +1,141 @@
+{
+  "name": "ham_gpio",
+  "version": "1.0.0",
+  "description": "",
+  "main": "client.js",
+  "dependencies": {
+    "debug": "*",
+    "serialport": "*"
+  },
+  "devDependencies": {
+    "@babel/core": "*",
+    "@babel/eslint-parser": "*",
+    "eslint": "*",
+    "eslint-plugin-import": "*",
+    "eslint-plugin-jasmine": "*",
+    "jasmine": "*"
+  },
+  "scripts": {
+    "_test": "jasmine \"**/*[sS]pec.?(m)js\"",
+    "lint": "eslint *.js",
+    "test": "jasmine serialclient-spec.js",
+    "run:coreTester": "env DEBUG=*:CoreTester,*:Command,*:SerialClientCB,*:SerialClient:* node coreTesterMCUClient.js 2>&1 | tee /tmp/coreTester.log",
+    "run:mcuClient": "env DEBUG=*:MCUClient,*:SerialClient:* node ./mcu_client.js",
+    "debug:mcuClient": "env environment=local DEBUG=* node --inspect-brk=0.0.0.0 mcu_client.js",
+    "debug:coreTester": "env environment=local DEBUG=* node --inspect-brk=0.0.0.0 coreTesterMCUClient.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/scirelli/ham_hw_comms.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {},
+  "homepage": "",
+  "engines": {
+    "node": ">=18.12.1",
+    "npm": ">=8.19.2"
+  },
+  "babel": {},
+  "prettier": {
+    "printWidth": 120
+  },
+  "eslintConfig": {
+    "root": true,
+    "env": {
+      "es2020": true,
+      "browser": false,
+      "node": true,
+      "jasmine": true
+    },
+    "parser": "@babel/eslint-parser",
+    "parserOptions": {
+      "sourceType": "module"
+    },
+    "extends": [
+      "eslint:recommended"
+    ],
+    "globals": {},
+    "rules": {
+      "indent": [
+        "error",
+        2,
+        {
+          "SwitchCase": 1,
+          "VariableDeclarator": {
+            "var": 1,
+            "let": 1,
+            "const": 1
+          },
+          "outerIIFEBody": 1,
+          "MemberExpression": 1,
+          "ObjectExpression": 1
+        }
+      ],
+      "key-spacing": [
+        "error",
+        {
+          "beforeColon": false,
+          "afterColon": true,
+          "align": {
+            "on": "value"
+          }
+        }
+      ],
+      "linebreak-style": [
+        "error",
+        "unix"
+      ],
+      "new-parens": "error",
+      "eqeqeq": "error",
+      "quotes": [
+        "error",
+        "single"
+      ],
+      "no-trailing-spaces": "error",
+      "space-before-blocks": [
+        "error",
+        {
+          "functions": "always",
+          "keywords": "always",
+          "classes": "never"
+        }
+      ],
+      "comma-dangle": "error",
+      "comma-spacing": [
+        "error",
+        {
+          "before": false,
+          "after": true
+        }
+      ],
+      "space-before-function-paren": [
+        "error",
+        {
+          "anonymous": "ignore",
+          "named": "never"
+        }
+      ],
+      "no-console": [
+        "warn",
+        {
+          "allow": [
+            "warn",
+            "error",
+            "log"
+          ]
+        }
+      ],
+      "semi": [
+        "error",
+        "always"
+      ],
+      "max-len": [
+        "error",
+        {
+          "code": 280
+        }
+      ]
+    }
+  }
+}

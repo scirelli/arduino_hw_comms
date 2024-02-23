@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# read lines one by one until "" (empty line)
+
+file=${1:-'/dev/ttyACM1'}
+
+terminator="$"
+while IFS= read -rn4 char; do
+    if [ "$char" = "$terminator" ]; then
+        #break
+        echo ""
+    else
+        printf "%X" "\"$char"
+    fi
+done <"$file"
