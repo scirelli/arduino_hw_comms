@@ -3,54 +3,59 @@ const logFactory = require('./logFactory.js');
 const fs = require('fs');
 const os = require('os');
 
-const DEFAULT_LOGGER = logFactory.createLogger(`SerialClient`);
+const unsigned = _=>_>>>0;
+const DEFAULT_LOGGER = logFactory.createLogger('SerialClient');
 const MASK   = 0xFF_FF_FF_FF;
 const HEADER = 0xD0_00_00_DE;
 const FOOTER = 0xDE_AD_BE_AF;
 
-class SerialClient {
-    static #BUFFER_CLEAR_DELAY = 5;
-    static #INITIALIZE_TIMEOUT = 5000;
-    static #RESPONSE_WAIT_TIMEOUT = 60000;
+class SerialClient{
+  static #BUFFER_CLEAR_DELAY = 5;
+  static #INITIALIZE_TIMEOUT = 5000;
+  static #RESPONSE_WAIT_TIMEOUT = 60000;
 
-    constructor(portPath, errorHandler = DEFAULT_LOGGER.error) {
-        this.port = null;
-        this.portPath = portPath;
-        this.handlers = {
-            onError: []
-        };
-        this.ramble = 0;
+  constructor(portPath, errorHandler = DEFAULT_LOGGER.error) {
+    this.port = null;
+    this.portPath = portPath;
+    this.handlers = {
+      onError: []
+    };
+    this.preamble = 0;
 
-        this.registerHandler('onError', errorHandler);
-        this.setup();
+    this.registerHandler('onError', errorHandler);
+    this.setup();
+  }
+
+  setup() {
+    this.port = new SerialPort({ path: this.portPath, baudRate: 9600 }, this.errorHandler.bind(this));
+    this.port.on('error', (...args) => this.errorHandler(...args));
+    this.port.on('data',  (...args) => this.dataHandler(...args));
+  }
+
+  dataHandler(data) {
+    for (var i = 0; i < data.length; i++) {
+      this.preamble = unsigned(this.preamble << 8);
+      this.preamble = unsigned(this.preamble | data[i]);
+      if(this.preamble === HEADER) {
+        DEFAULT_LOGGER.log(this.preamble.toString(16));
+        this.preamble = 0;
+      }
+      DEFAULT_LOGGER.debug(this.preamble.toString(16));
     }
+  }
 
-    setup() {
-        this.port = new SerialPort({ path: this.portPath, baudRate: 9600 }, this.errorHandler.bind(this));
-        this.port.on('error', (...args) => this.errorHandler(...args));
-        this.port.on('data',  (...args) => this.dataHandler(...args));
-    }
+  errorHandler() {
+    this.handlers['onError'].forEach(h=>h.apply(this, arguments));
+  }
 
-    dataHandler(data) {
-        DEFAULT_LOGGER.log(data);
-        //var data = data.toString();
-        // for (var i = 0; i < data.length; i++) {
-        //     DEFAULT_LOGGER.log(data[i]);
-        // }
+  registerHandler(event, handler) {
+    if(Array.isArray(this.handlers[event])) {
+      this.handlers[event].push(handler);
+    }else{
+      this.handlers[event] = [handler];
     }
-
-    errorHandler() {
-        this.handlers['onError'].forEach(h=>h.apply(this, arguments));
-    }
-
-    registerHandler(event, handler) {
-        if(Array.isArray(this.handlers[event])) {
-            this.handlers[event].push(handler);
-        }else{
-            this.handlers[event] = [handler];
-        }
-        return this;
-    }
+    return this;
+  }
 }
 
 function _SerialClient(portPath, error_callback, serialport = SerialPort) {
