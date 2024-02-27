@@ -30,7 +30,6 @@ void setup() {
 }
 
 void loop() {
-    
   msg[0] = 0x4142;
   msg[1] = 0x4344;
   msg[2] = 0x4546;
@@ -70,7 +69,7 @@ void sendBinary(uint16_t value) {
 // function to send the given long integer value to the serial port
 void sendBinary(uint32_t value) {
   // send the higher 16 bit integer value:
-  uint16_t temp = value >> 16; 
+  uint16_t temp = value >> 16;
   sendBinary(temp);
   temp = value & 0xFFFF;
   // send the low 16 bit integer value

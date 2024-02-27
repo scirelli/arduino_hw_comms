@@ -5,9 +5,60 @@ const os = require('os');
 
 const unsigned = _=>_>>>0;
 const DEFAULT_LOGGER = logFactory.createLogger('SerialClient');
-const MASK   = 0xFF_FF_FF_FF;
-const HEADER = 0xD0_00_00_DE;
-const FOOTER = 0xDE_AD_BE_AF;
+
+
+class  MessageHandler{
+  static MASK   = 0xFF_FF_FF_FF;
+  static HEADER = 0xD0_00_00_DE;
+  static FOOTER = 0xDE_AD_BE_AF;
+  static MESSAGE_BUFFER_SIZE = 24; //24bytes; 8 words IR readings, 1 extra word, footer word
+
+  constructor(){
+    this.preamble = 0;
+    this.msgBuffer = new UInt16Array[MESSAGE_BUFFER_SIZE];
+    this.subscribers = [];
+  }
+
+  onData(data) {
+    for (var i = 0; i < data.length; i++) {
+      this.preamble = unsigned(this.preamble << 8);
+      this.preamble = unsigned(this.preamble | data[i]);
+      if(this.preamble === FOOTER){
+        if(this.isValidMessage()){
+          this.notifiyMessage();
+        }
+        this.resetMessage();
+      }
+
+      DEFAULT_LOGGER.log(this.preamble.toString(16));
+      this.preamble = 0;
+      DEFAULT_LOGGER.debug(this.preamble.toString(16));
+    }
+  }
+
+  resetMessage() {
+    this.msgBuffer = new UInt16Array(MessageHandler.MESSAGE_BUFFER_SIZE);
+  }
+
+  isValidMessage() {
+    return true;
+  }
+
+  notifiyMessage(){
+    this.subscribers.forEach(s=>{
+      s(UInt16Array.from(hthis.msgBuffer));
+    });
+  }
+
+  subscribe(subscriber){
+    if(Array.isArray(this.subscribers)) {
+      this.subscribers.push(subscriber);
+    }else{
+      this.subscribers.push(subscriber);
+    }
+    return this;
+  }
+}
 
 class SerialClient{
   static #BUFFER_CLEAR_DELAY = 5;
@@ -20,8 +71,9 @@ class SerialClient{
     this.handlers = {
       onError: []
     };
-    this.preamble = 0;
 
+    let messageHandler = new MessageHandler();
+    this.registerHandler('onData', messageHandler.onData.bind(this.messageHandler));
     this.registerHandler('onError', errorHandler);
     this.setup();
   }
@@ -33,19 +85,11 @@ class SerialClient{
   }
 
   dataHandler(data) {
-    for (var i = 0; i < data.length; i++) {
-      this.preamble = unsigned(this.preamble << 8);
-      this.preamble = unsigned(this.preamble | data[i]);
-      if(this.preamble === HEADER) {
-        DEFAULT_LOGGER.log(this.preamble.toString(16));
-        this.preamble = 0;
-      }
-      DEFAULT_LOGGER.debug(this.preamble.toString(16));
-    }
+    this.handlers['onData'].forEach(h=>h.apply(h, arguments));
   }
 
   errorHandler() {
-    this.handlers['onError'].forEach(h=>h.apply(this, arguments));
+    this.handlers['onError'].forEach(h=>h.apply(h, arguments));
   }
 
   registerHandler(event, handler) {
@@ -213,5 +257,7 @@ SerialClient.getSerials = async function getSerials() {
     });
   });
 };
+
+SerialClient.Message = Message;
 
 module.exports = SerialClient;
