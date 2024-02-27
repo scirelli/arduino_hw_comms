@@ -11,33 +11,35 @@ class  MessageHandler{
   static MASK   = 0xFF_FF_FF_FF;
   static HEADER = 0xD0_00_00_DE;
   static FOOTER = 0xDE_AD_BE_AF;
-  static MESSAGE_BUFFER_SIZE = 24; //24bytes; 8 words IR readings, 1 extra word, footer word
+  static MESSAGE_BUFFER_SIZE = 24; //24bytes; 8 16bit words (16 bytes) IR readings, 1 16bit word (2 bytes) extra data, 1 16bit word (2 bytes) CRC, 2 16bit word (4 bytes) footer 
 
   constructor(){
     this.preamble = 0;
-    this.msgBuffer = new UInt16Array[MESSAGE_BUFFER_SIZE];
+    this.msgBuffer = new Uint8Array(MessageHandler.MESSAGE_BUFFER_SIZE);
+    this.msgBufferIdx = 0;
     this.subscribers = [];
   }
 
   onData(data) {
     for (var i = 0; i < data.length; i++) {
+      this.msgBuffer[this.msgBufferIdx++ % MessageHandler.MESSAGE_BUFFER_SIZE] = data[i];
       this.preamble = unsigned(this.preamble << 8);
       this.preamble = unsigned(this.preamble | data[i]);
-      if(this.preamble === FOOTER){
+      if(this.preamble === MessageHandler.FOOTER){
         if(this.isValidMessage()){
+          DEFAULT_LOGGER.debug('Raw message: ', this.msgBuffer);
           this.notifiyMessage();
         }
         this.resetMessage();
+        continue;
       }
-
-      DEFAULT_LOGGER.log(this.preamble.toString(16));
-      this.preamble = 0;
-      DEFAULT_LOGGER.debug(this.preamble.toString(16));
     }
   }
 
   resetMessage() {
-    this.msgBuffer = new UInt16Array(MessageHandler.MESSAGE_BUFFER_SIZE);
+    this.preamble = 0;
+    this.msgBufferIdx = 0;
+    this.msgBuffer = new Uint8Array(MessageHandler.MESSAGE_BUFFER_SIZE);
   }
 
   isValidMessage() {
@@ -46,7 +48,10 @@ class  MessageHandler{
 
   notifiyMessage(){
     this.subscribers.forEach(s=>{
-      s(UInt16Array.from(hthis.msgBuffer));
+      let m = new Uint16Array(this.msgBuffer.length/2);
+      for(let i=0,mi=0; i<this.msgBuffer.length; i+=2){
+        m[mi++] = (this.msgBuffer[i] << 8) | this.msgBuffer[i+1];
+      }
     });
   }
 
@@ -73,7 +78,7 @@ class SerialClient{
     };
 
     let messageHandler = new MessageHandler();
-    this.registerHandler('onData', messageHandler.onData.bind(this.messageHandler));
+    this.registerHandler('onData', messageHandler.onData.bind(messageHandler));
     this.registerHandler('onError', errorHandler);
     this.setup();
   }
@@ -258,6 +263,6 @@ SerialClient.getSerials = async function getSerials() {
   });
 };
 
-SerialClient.Message = Message;
+SerialClient.MessageHandler = MessageHandler;
 
 module.exports = SerialClient;
