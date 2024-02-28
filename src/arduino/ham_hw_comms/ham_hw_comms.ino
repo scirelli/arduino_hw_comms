@@ -29,6 +29,7 @@ void setup() {
 }
 
 void loop() {
+  //Note will be stored little endian
   msg[0] = 0x4142; // 65 66
   msg[1] = 0x4344; // 67 68
   msg[2] = 0x4546; // 69 70
@@ -54,15 +55,18 @@ uint16_t calcCRC() {
   uint16_t crc = 0;
   for (unsigned int i=0; i<CONTENT_SZ<<1; i++) {
     crc = _crc16_update (crc, ((uint8_t*)msg)[i]); // update the crc value
+    //Serial.print(", ");
+    //Serial.print(((uint8_t*)msg)[i]);
   }
+  //Serial.println("");
   //Serial.println(crc);
   return crc;
 }
 
 // function to send the given integer value to the serial port
 void sendBinary(uint16_t value) {
-  Serial.write(highByte(value));  // send the high byte
   Serial.write(lowByte(value));   // send the low byte
+  Serial.write(highByte(value));  // send the high byte
 }
 
 // function to send the given long integer value to the serial port

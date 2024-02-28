@@ -2,34 +2,42 @@ const fs = require('fs');
 const os = require('os');
 const { SerialPort } = require('serialport');
 const logFactory = require('./logFactory.js');
-const crc16_update = require('./crc16.js');
+const {crc16_rev_update} = require('./crc16.js');
 
 const unsigned = _=>_>>>0;
 const DEFAULT_LOGGER = logFactory.createLogger('SerialClient');
 
+class IDataHandler {
+  onData(){
+    throw new Error('Not Implemented');
+  }
+}
 
-class  MessageHandler{
+class  MessageBuilder extends IDataHandler{
   static MASK   = 0xFF_FF_FF_FF;
-  static HEADER = 0xD0_00_00_DE;
-  static FOOTER = 0xDE_AD_BE_AF;
+  //static HEADER = 0xD0_00_00_DE;
+  static HEADER = 0x00_D0_DE_00;
+  //static FOOTER = 0xDE_AD_BE_AF;
+  static FOOTER = 0xAD_DE_AF_BE;
   static MESSAGE_BUFFER_SIZE = 24; //24bytes; 8 16bit words (16 bytes) IR readings, 1 16bit word (2 bytes) extra data, 1 16bit word (2 bytes) CRC, 2 16bit word (4 bytes) footer
-  static MSG_CRC_HIGH_BYTE = 18;
-  static MSG_CRC_LOW_BYTE = 19;
-  static CONTENT_SZ = 9; // bytes
+  static MSG_CRC_LOW_BYTE = 18;
+  static MSG_CRC_HIGH_BYTE = 19;
+  static CONTENT_SZ = 18; // bytes
 
   constructor() {
+    super();
     this.preamble = 0;
-    this.msgBuffer = new Uint8Array(MessageHandler.MESSAGE_BUFFER_SIZE);
+    this.msgBuffer = new Uint8Array(MessageBuilder.MESSAGE_BUFFER_SIZE);
     this.msgBufferIdx = 0;
     this.subscribers = [];
   }
 
   onData(data) {
     for (var i = 0; i < data.length; i++) {
-      this.msgBuffer[this.msgBufferIdx++ % MessageHandler.MESSAGE_BUFFER_SIZE] = data[i];
+      this.msgBuffer[this.msgBufferIdx++ % MessageBuilder.MESSAGE_BUFFER_SIZE] = data[i];
       this.preamble = unsigned(this.preamble << 8);
       this.preamble = unsigned(this.preamble | data[i]);
-      if(this.preamble === MessageHandler.FOOTER) {
+      if(this.preamble === MessageBuilder.FOOTER) {
         if(this.isValidMessage()) {
           DEFAULT_LOGGER.debug('Raw message: ', this.msgBuffer);
           this.notifiyMessage();
@@ -45,25 +53,29 @@ class  MessageHandler{
   resetMessage() {
     this.preamble = 0;
     this.msgBufferIdx = 0;
-    this.msgBuffer = new Uint8Array(MessageHandler.MESSAGE_BUFFER_SIZE);
+    this.msgBuffer = new Uint8Array(MessageBuilder.MESSAGE_BUFFER_SIZE);
+    return this;
   }
 
   isValidMessage() {
-    let crc = 0;
-    for(let i=0; i < MessageHandler.CONTENT_SZ; i++){
-      crc = crc16_update(crc, this.msgBuffer[i]);
+    let crc = 0,
+      msgCRC = ((this.msgBuffer[MessageBuilder.MSG_CRC_HIGH_BYTE]<<8) | this.msgBuffer[MessageBuilder.MSG_CRC_LOW_BYTE]);
+
+    for(let i=0; i < MessageBuilder.CONTENT_SZ; i++){
+      crc = crc16_rev_update(crc, this.msgBuffer[i]);
     }
+
     
-    return crc === ((this.msgBuffer[MessageHandler.MSG_CRC_HIGH_BYTE]<<8) | this.msgBuffer[MessageHandler.MSG_CRC_LOW_BYTE]);
+    return crc === msgCRC;
   }
 
   notifiyMessage() {
+    let msg = this.toBigEndianWord(this.msgBuffer);
     this.subscribers.forEach(s=>{
-      let m = new Uint16Array(this.msgBuffer.length/2);
-      for(let i=0, mi=0; i<this.msgBuffer.length; i+=2) {
-        m[mi++] = (this.msgBuffer[i] << 8) | this.msgBuffer[i+1];
-      }
+      s(msg.slice(0));
     });
+
+    return this;
   }
 
   subscribe(subscriber) {
@@ -74,6 +86,43 @@ class  MessageHandler{
     }
     return this;
   }
+
+  toBigEndianWord(msg) {
+    let m = new Uint16Array(msg.length/2);
+    for(let i=0, mi=0; i<msg.length; i+=2) {
+      m[mi++] = (msg[i+1] << 8) | msg[i];
+    }
+    return m;
+  }
+
+  to16bitWord(msg) {
+    let m = new Uint16Array(msg.length/2);
+    for(let i=0, mi=0; i<msg.length; i+=2) {
+      m[mi++] = (msg[i] << 8) | msg[i+1];
+    }
+    return m;
+  }
+
+  swapEndian(msg) {
+    let converted = new Uint8Array(msg.length);
+    for(let i=0; i<msg.length; i+=2) {
+      converted[i+1] = msg[i];
+      converted[i] = msg[i+1];
+    }
+    return converted;
+  }
+}
+
+class IErrorHandler{
+  onError() {
+    throw new Error('Not Implemented');
+  }
+}
+
+class ErrorHandler extends IErrorHandler{
+  onError() {
+    DEFAULT_LOGGER.error.apply(arguments);
+  }
 }
 
 class SerialClient{
@@ -81,16 +130,14 @@ class SerialClient{
   static #INITIALIZE_TIMEOUT = 5000;
   static #RESPONSE_WAIT_TIMEOUT = 60000;
 
-  constructor(portPath, errorHandler = DEFAULT_LOGGER.error) {
+  constructor(portPath, errorHandler = new ErrorHandler(), messageBuilder = new MessageBuilder().subscribe(DEFAULT_LOGGER.log)) {
     this.port = null;
     this.portPath = portPath;
-    this.handlers = {
-      onError: []
-    };
+    this.messageBuilders = [];
+    this.errorHandlers = [];
 
-    let messageHandler = new MessageHandler();
-    this.registerHandler('onData', messageHandler.onData.bind(messageHandler));
-    this.registerHandler('onError', errorHandler);
+    this.addMessageBuilder(messageBuilder);
+    this.addErrorHandler(errorHandler);
     this.setup();
   }
 
@@ -100,20 +147,27 @@ class SerialClient{
     this.port.on('data',  (...args) => this.dataHandler(...args));
   }
 
-  dataHandler(data) {
-    this.handlers['onData'].forEach(h=>h.apply(h, arguments));
+  addMessageBuilder(messageBuilder) {
+    this.messageBuilders.push(messageBuilder);
+    return this;
+  }
+
+  addErrorHandler(errorHandler) {
+    this.errorHandlers.push(errorHandler);
+    return this;
+  }
+
+  dataHandler() {
+    this.messageBuilders.forEach(mb=>{
+      mb.onData.apply(mb, arguments);
+    });
+    return this;
   }
 
   errorHandler() {
-    this.handlers['onError'].forEach(h=>h.apply(h, arguments));
-  }
-
-  registerHandler(event, handler) {
-    if(Array.isArray(this.handlers[event])) {
-      this.handlers[event].push(handler);
-    }else{
-      this.handlers[event] = [handler];
-    }
+    this.errorHandlers.forEach(eh=>{
+      eh.onError.apply(eh, arguments);
+    });
     return this;
   }
 }
@@ -274,6 +328,6 @@ SerialClient.getSerials = async function getSerials() {
   });
 };
 
-SerialClient.MessageHandler = MessageHandler;
+SerialClient.MessageBuilder = MessageBuilder;
 
 module.exports = SerialClient;
