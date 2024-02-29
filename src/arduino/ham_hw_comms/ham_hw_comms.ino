@@ -123,11 +123,6 @@ uint32_t cmd_parseCommand() {
                 cmd_headerSearch(c);
                 debugPrintData();
                 break;
-            case CMD_STATE_CRC:
-                debugPrintln("Parsing CRC...");
-                cmd_parseCRC(c);
-                debugPrintData();
-                break;
             case CMD_STATE_OPCODE:
                 debugPrintln("Parsing OpCode...");
                 cmd_parseOptCode(c);
@@ -141,6 +136,11 @@ uint32_t cmd_parseCommand() {
             case CMD_STATE_READ_PIXEL_CMD:
                 debugPrintln("Parsing Pixel Cmd...");
                 cmd_parsePixelCmd(c);
+                debugPrintData();
+                break;
+            case CMD_STATE_CRC:
+                debugPrintln("Parsing CRC...");
+                cmd_parseCRC(c);
                 debugPrintData();
                 break;
             case CMD_STATE_RESET:
@@ -159,15 +159,12 @@ uint32_t cmd_parseCommand() {
 void cmd_headerSearch(uint8_t c) {
     cmdDelim = (cmdDelim << 8) | c;
     if(cmdDelim == CMD_DELIM){
-        cmdReadState = CMD_STATE_CRC;
+        cmdReadState = CMD_STATE_OPCODE;
     }
 }
 
-void cmd_parseCRC(uint8_t c) {
-    cmdReadState = CMD_STATE_OPCODE;
-}
-
 void cmd_parseOptCode(uint8_t c) {
+    cmdStartIdx = commandBufIdx;
     switch(c) {
     case CMD_OPCODE_MOTOR:
         cmdReadState = CMD_STATE_READ_MOTOR_CMD;
@@ -187,6 +184,10 @@ void cmd_parseMotorCmd(uint8_t c) {
 
 void cmd_parsePixelCmd(uint8_t c) {
     cmdReadState = CMD_STATE_RESET;
+}
+
+void cmd_parseCRC(uint8_t c) {
+    cmdReadState = CMD_STATE_OPCODE;
 }
 
 uint8_t cmd_insertIntoBuffer(uint8_t c) {
