@@ -81,6 +81,9 @@ Basic layout                Example Motor command              Example Pixel Com
                                                                ┠──────────┨
                                                                ┃ 0x0F     ┃ 1 byte (blue)
                                                                ┗━━━━━━━━━━┛
+Example command: Motor command;
+STEVq C?
+
 */
 //------------------------------------
 
@@ -279,6 +282,7 @@ void cmd_parsePixelCmd() {
 void cmd_validateCRC() {
     log(LOG_DEBUG, "Validating CRC");
     if(cmd_isValidateCRC()) {
+        log(LOG_DEBUG, "Valid CRC");
         cmdReadState = CMD_STATE_EXEC;
     }else{
         cmdReadState = CMD_STATE_RESET;
@@ -296,7 +300,12 @@ int cmd_getCmdLength() {
 }
 
 bool cmd_isValidateCRC() {
-    return false;
+    uint16_t crc = 0;
+
+    for (unsigned int i=2; i<parsedByteCount; i++) {
+        crc = _crc16_update (crc, commandBuffer[i]);
+    }
+    return (crc == *((uint16_t*)commandBuffer));
 }
 
 uint8_t cmd_insertIntoBuffer(uint8_t c) {
