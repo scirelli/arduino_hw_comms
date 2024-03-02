@@ -2,6 +2,7 @@
  * HAM HW Commuinication
  *
 */
+#include <stdbool.h>
 #include <util/crc16.h>
 //int 16bits
 //long 32 bits
@@ -20,6 +21,10 @@
 
 #define MOTOR_OVER_CURRENT_BIT 0b00000001
 #define MAINTENANCE_DOOR_BIT   0b00000010
+
+#define LOG_DEBUG "Debug"
+#define LOG_WARN "Warning"
+#define LOG_INFO "Info"
 
 //--- Receive msg/Commands Layout ---
 //--- Message --- byte index
@@ -45,7 +50,7 @@
 #define CMD_MOTOR_PARAM_SZ  1
 #define CMD_MOTOR_CMD_SZ    (CMD_CRC_SZ + CMD_OPCODE_SZ + CMD_MOTOR_PARAM_SZ)
 
-#define CMD_PIXEL_PARAM_SZ  4
+#define CMD_PIXEL_PARAM_SZ  5
 #define CMD_PIXEL_CMD_SZ    (CMD_CRC_SZ + CMD_OPCODE_SZ + CMD_PIXEL_PARAM_SZ)
 
 #define CMD_STATE_HEADER_SEARCH  1
@@ -53,8 +58,9 @@
 #define CMD_STATE_READ_OPCODE    3
 #define CMD_STATE_READ_MOTOR_CMD 4
 #define CMD_STATE_READ_PIXEL_CMD 5
-#define CMD_STATE_RESET          6
-#define CMD_STATE_EXEC           7
+#define CMD_STATE_VALIDATE_CMD   6
+#define CMD_STATE_RESET          7
+#define CMD_STATE_EXEC           8
 
 /*
 Basic layout                Example Motor command              Example Pixel Command
@@ -65,10 +71,12 @@ Basic layout                Example Motor command              Example Pixel Com
 ┠──────────┨                  ┠─────────────┨                  ┠──────────┨
 ┃ OPCODE   ┃ 1 byte           ┃   67        ┃ 1 byte           ┃ 73       ┃ 1 byte
 ┠──────────┨                  ┠─────────────┨                  ┠──────────┨
-┃ PARAM 1  ┃ 1 byte           ┃ 0b00000001  ┃ 1 byte (Pins)    ┃ 1        ┃ 1 byte (Segment index)
+┃ PARAM 1  ┃ 1 byte           ┃ 0b00000001  ┃ 1 byte (Pins)    ┃ 1        ┃ 1 byte (Start index)
 ┠──────────┨                  ┗━━━━━━━━━━━━━┛                  ┠──────────┨
-┃ PARAM N  ┃ N bytes                                           ┃ 0xFF     ┃ 1 byte (red)
+┃ PARAM N  ┃ N bytes                                           ┃ 5        ┃ 1 byte (length)
 ┗━━━━━━━━━━┛                                                   ┠──────────┨
+                                                               ┃ 0xFF     ┃ 1 byte (red)
+                                                               ┠──────────┨
                                                                ┃ 0x00     ┃ 1 byte (green)
                                                                ┠──────────┨
                                                                ┃ 0x0F     ┃ 1 byte (blue)
@@ -150,110 +158,126 @@ void cmd_processStates() {
     uint8_t c;
     switch(cmdReadState) {
         case CMD_STATE_HEADER_SEARCH:
-            if (Serial.available()) {
-                debugPrintln("Searching for header...");
-                cmd_headerSearch(cmd_insertIntoBuffer(Serial.read())); //read() returns -1 if buffer is empty
-                debugPrintData();
-            }
+            cmd_headerSearch();
             break;
         case CMD_STATE_READ_CRC:
-            if (Serial.available()) {
-                debugPrintln("Parsing CRC...");
-                cmd_parseCRC(cmd_insertIntoBuffer(Serial.read()));
-                debugPrintData();
-            }
+            cmd_parseCRC();
             break;
         case CMD_STATE_READ_OPCODE:
-            if (Serial.available()) {
-                debugPrintln("Parsing OpCode...");
-                c = cmd_insertIntoBuffer(Serial.read());
-                cmd_parseOptCode(c);
-                debugPrintData();
-            }
+            cmd_parseOptCode();
             break;
         case CMD_STATE_READ_MOTOR_CMD:
-            if (Serial.available()) {
-                debugPrintln("Parsing Motor Cmd...");
-                cmd_parseMotorCmd(cmd_insertIntoBuffer(Serial.read()));
-                debugPrintData();
-            }
+            cmd_parseMotorCmd();
             break;
         case CMD_STATE_READ_PIXEL_CMD:
-            if (Serial.available()) {
-                debugPrintln("Parsing Pixel Cmd...");
-                cmd_parsePixelCmd(cmd_insertIntoBuffer(Serial.read()));
-                debugPrintData();
-            }
+            cmd_parsePixelCmd();
             break;
         case CMD_STATE_VALIDATE_CMD:
+            cmd_validateCRC();
             break;
         case CMD_STATE_EXEC:
             Serial.println("Executing command");
             cmdReadState = CMD_STATE_RESET;
             break;
         case CMD_STATE_RESET:
-            debugPrintln("Resetting command parser");
+            log(LOG_DEBUG, "Resetting command parser");
             cmd_reset();
-            debugPrintData();
+            logData();
             break;
         default: //Invalid state
-            debugPrintln("Invalid command state");
+            log(LOG_DEBUG, "Invalid command state");
             cmd_reset();
-            debugPrintData();
+            logData();
     }
 }
 
-void cmd_headerSearch(uint8_t c) {
-    cmdDelim = (cmdDelim << 8) | c;
-    if(cmdDelim == CMD_DELIM){
-        parsedByteCount = CMD_HEADER_SZ;
-        cmdReadState = CMD_STATE_READ_CRC;
+void cmd_headerSearch() {
+    uint8_t c;
+    if (Serial.available()) {
+        log(LOG_DEBUG, "Searching for header...");
+        c = cmd_insertIntoBuffer(Serial.read()); //read() returns -1 if buffer is empty
+        cmdDelim = (cmdDelim << 8) | c;
+        if(cmdDelim == CMD_DELIM){
+            log(LOG_DEBUG, "Header found!");
+            cmd_reset();
+            cmdReadState = CMD_STATE_READ_CRC;
+        }
+        logData();
     }
 }
 
-void cmd_parseCRC(uint8_t c) {
-    parsedByteCount++;
-    if(parsedByteCount == CMD_HEADER_SZ + CMD_CRC_SZ){
-        cmdReadState = CMD_STATE_READ_OPCODE;
-    }else if (parsedByteCount > CMD_HEADER_SZ + CMD_CRC_SZ) {
-        cmdReadState = CMD_STATE_RESET;
+void cmd_parseCRC() {
+    uint8_t c;
+    if (Serial.available()) {
+        c = cmd_insertIntoBuffer(Serial.read());
+        log(LOG_DEBUG, "Parsing CRC...");
+        parsedByteCount++;
+        if(parsedByteCount == CMD_CRC_SZ){
+            log(LOG_DEBUG, "CRC parsed");
+            cmdReadState = CMD_STATE_READ_OPCODE;
+        }else if (parsedByteCount > CMD_CRC_SZ) {
+            cmdReadState = CMD_STATE_RESET;
+        }
+        logData();
     }
 }
 
-void cmd_parseOptCode(uint8_t c) {
-    parsedByteCount++;
-    switch(c) {
-    case CMD_OPCODE_MOTOR:
-        cmdReadState = CMD_STATE_READ_MOTOR_CMD;
-        break;
-    case CMD_OPCODE_LED:
-        cmdReadState = CMD_STATE_READ_PIXEL_CMD;
-        break;
-    default:
-        debugPrintln("Invalid op code");
-        cmd_reset();
+void cmd_parseOptCode() {
+    uint8_t c;
+    if (Serial.available()) {
+        log(LOG_DEBUG, "Parsing OpCode...");
+        c = cmd_insertIntoBuffer(Serial.read());
+        parsedByteCount++;
+        switch(c) {
+        case CMD_OPCODE_MOTOR:
+            log(LOG_DEBUG, "Found motor opcode");
+            cmdReadState = CMD_STATE_READ_MOTOR_CMD;
+            break;
+        case CMD_OPCODE_LED:
+            log(LOG_DEBUG, "Found pixel opcode");
+            cmdReadState = CMD_STATE_READ_PIXEL_CMD;
+            break;
+        default:
+            log(LOG_DEBUG, "Invalid op code");
+            cmd_reset();
+        }
+        logData();
     }
 }
 
-void cmd_parseMotorCmd(uint8_t c) {
-    parsedByteCount++;
-    if(parsedByteCount == CMD_HEADER_SZ + CMD_CRC_SZ + CMD_OPCODE_SZ + CMD_MOTOR_PARAM_SZ) {
-        cmdReadState = CMD_STATE_VALIDATE_CMD;
-    }else if(parsedByteCount > CMD_HEADER_SZ + CMD_CRC_SZ + CMD_OPCODE_SZ + CMD_MOTOR_PARAM_SZ) {
-        cmdReadState = CMD_STATE_RESET;
+void cmd_parseMotorCmd() {
+    uint8_t c;
+    if (Serial.available()) {
+        c = cmd_insertIntoBuffer(Serial.read());
+        parsedByteCount++;
+        log(LOG_DEBUG, "Parsing Motor Cmd...");
+        if(parsedByteCount == CMD_CRC_SZ + CMD_OPCODE_SZ + CMD_MOTOR_PARAM_SZ) {
+            log(LOG_DEBUG, "Motor params parsed");
+            cmdReadState = CMD_STATE_VALIDATE_CMD;
+        }else if(parsedByteCount > CMD_CRC_SZ + CMD_OPCODE_SZ + CMD_MOTOR_PARAM_SZ) {
+            cmdReadState = CMD_STATE_RESET;
+        }
+        logData();
     }
 }
 
-void cmd_parsePixelCmd(uint8_t c) {
-    parsedByteCount++;
-    if(parsedByteCount == CMD_HEADER_SZ + CMD_CRC_SZ + CMD_OPCODE_SZ + CMD_PIXEL_PARAM_SZ) {
-        cmdReadState = CMD_STATE_VALIDATE_CMD;
-    }else if(parsedByteCount > CMD_HEADER_SZ + CMD_CRC_SZ + CMD_OPCODE_SZ + CMD_PIXEL_PARAM_SZ) {
-        cmdReadState = CMD_STATE_RESET;
+void cmd_parsePixelCmd() {
+    uint8_t c;
+    if (Serial.available()) {
+        log(LOG_DEBUG, "Parsing Pixel Cmd...");
+        c = cmd_insertIntoBuffer(Serial.read());
+        parsedByteCount++;
+        if(parsedByteCount == CMD_CRC_SZ + CMD_OPCODE_SZ + CMD_PIXEL_PARAM_SZ) {
+            cmdReadState = CMD_STATE_VALIDATE_CMD;
+        }else if(parsedByteCount > CMD_CRC_SZ + CMD_OPCODE_SZ + CMD_PIXEL_PARAM_SZ) {
+            cmdReadState = CMD_STATE_RESET;
+        }
+        logData();
     }
 }
 
 void cmd_validateCRC() {
+    log(LOG_DEBUG, "Validating CRC");
     if(cmd_isValidateCRC()) {
         cmdReadState = CMD_STATE_EXEC;
     }else{
@@ -271,7 +295,8 @@ int cmd_getCmdLength() {
   return t - cmdStartIdx;
 }
 
-int cmd_isValidateCRC() {
+bool cmd_isValidateCRC() {
+    return false;
 }
 
 uint8_t cmd_insertIntoBuffer(uint8_t c) {
@@ -288,15 +313,19 @@ void cmd_reset() {
 }
 
 void cmd_printBuffer() {
-    debugPrintln((const char*)commandBuffer);
+    log("Debug", (const char*)commandBuffer);
 }
 
-size_t debugPrintln(const char* str) {
-    return Serial.print(str);
+size_t log(const char* type, const char* str) {
+    size_t d = Serial.print("##");
+    d += Serial.print(type);
+    d += Serial.print(":");
+    d += Serial.println(str);
+    return d;
 }
 
-size_t debugPrintData() {
-    size_t d = Serial.print(" Buffer = '");
+size_t logData() {
+    size_t d = Serial.print("##Debug:Buffer = '");
     d += Serial.print((const char *)commandBuffer);
     d += Serial.print("'");
     d += Serial.print("  Delim= '");
