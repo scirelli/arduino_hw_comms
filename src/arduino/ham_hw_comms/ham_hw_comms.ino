@@ -90,7 +90,31 @@ STEVq C?
 const uint32_t TX_DELIM = 0xDEADBEAF; // 222 173 190 175
 uint16_t msg[CONTENT_SZ];
 
-//--- RX Command Data ---
+//--- RX Command ---
+void cmd_parseCommands();
+void cmd_processStates();
+void cmd_headerSearch();
+void cmd_parseCRC();
+void cmd_parseOptCode();
+void cmd_parseMotorCmd();
+void cmd_parsePixelCmd();
+void cmd_reset();
+void cmd_executeCmd();
+void cmd_executeMotorCmd();
+void cmd_executePixelCmd();
+int cmd_getCmdLength();
+uint8_t cmd_getOpCode();
+uint8_t cmd_insertIntoBuffer();
+bool cmd_isValidateCRC();
+
+//--- Types ---
+typedef bool (*handler_t)();
+typedef struct _State{
+    _State *nextState;
+    handler_t handler;
+} State;
+
+// --- Data ---
 const uint32_t CMD_DELIM = 0x53544556; // STEV Temp for testing
 uint8_t commandBuffer[CMD_MAX_SZ+1]; //+1 for debugging purposes. I'd like to print as a string, last char needs to be \0
 uint32_t cmdDelim = 0;
@@ -98,6 +122,20 @@ int cmdReadState = CMD_STATE_HEADER_SEARCH;
 int cmdStartIdx      = 0;
 int parsedByteCount  = 0;
 int commandBufIdx    = 0;
+State *currentState = NULL, *initialState = NULL;
+
+State headerSearch = {
+    .nextState=NULL,
+    .handler=&cmd_headerSearch
+};
+State readCRC = {
+    .nextState=NULL,
+    .handler=&cmd_parseCRC
+};
+State readOpCode = {
+    .nextState=NULL,
+    .handler=&cmd_parseOptCode
+};
 //----------------------
 
 void setup() {
@@ -153,12 +191,11 @@ void sendBinary(uint32_t value) {
 }
 
 // Note: Serial.read has a 64byte buffer
-uint32_t cmd_parseCommands() {
+void cmd_parseCommands() {
     cmd_processStates();
 }
 
 void cmd_processStates() {
-    uint8_t c;
     switch(cmdReadState) {
         case CMD_STATE_HEADER_SEARCH:
             cmd_headerSearch();
@@ -179,8 +216,7 @@ void cmd_processStates() {
             cmd_validateCRC();
             break;
         case CMD_STATE_EXEC:
-            Serial.println("Executing command");
-            cmdReadState = CMD_STATE_RESET;
+            cmd_executeCmd();
             break;
         case CMD_STATE_RESET:
             log(LOG_DEBUG, "Resetting command parser");
@@ -308,6 +344,19 @@ bool cmd_isValidateCRC() {
     return (crc == *((uint16_t*)commandBuffer));
 }
 
+void cmd_executeCmd() {
+  Serial.println("Executing command");
+  switch(cmd_getOpCode()) {
+  }
+  cmdReadState = CMD_STATE_RESET;
+}
+
+void cmd_executeMotorCmd() {
+}
+
+void cmd_executePixelCmd() {
+}
+
 uint8_t cmd_insertIntoBuffer(uint8_t c) {
     commandBuffer[commandBufIdx++ %CMD_MAX_SZ] = c;
     return c;
@@ -319,6 +368,10 @@ void cmd_reset() {
     cmdStartIdx ^= cmdStartIdx;
     cmdDelim ^= cmdDelim;
     cmdReadState = CMD_STATE_HEADER_SEARCH;
+}
+
+uint8_t cmd_getOpCode() {
+    return commandBuffer[CMD_CRC_SZ + CMD_OPCODE_SZ];
 }
 
 void cmd_printBuffer() {
