@@ -40,6 +40,14 @@
 #define CMD_COLOR_RED_IDX   4
 #define CMD_COLOR_BLUE_IDX  5
 #define CMD_COLOR_GREEN_IDX 6
+
+// Motor
+#define MOTOR_PIN1 5
+#define MOTOR_PIN2 4
+#define RED       (MOTOR_PIN1)
+#define GREEN     (MOTOR_PIN2)
+#define BLUE       3
+
 // Motor Command
 #define CMD_MOTOR_IDX       3
 
@@ -100,7 +108,7 @@ STEVq C?
 const uint32_t TX_DELIM = 0xDEADBEAF; // 222 173 190 175
 uint16_t msg[CONTENT_SZ];
 
-//--- RX Command Data ---
+//--- RX Command ---
 void cmd_parseCommands();
 void cmd_processStates();
 void cmd_headerSearch();
@@ -141,6 +149,9 @@ handler_t handlers[] = {
     [CMD_STATE_RESET] = &cmd_reset,
     [CMD_STATE_CHECK_OPCODE] = &cmd_checkOpCode
 };
+//--- Motor Data ---
+int motorPin1State = HIGH;
+int motorPin2State = LOW;
 //----------------------
 
 void setup() {
@@ -155,11 +166,19 @@ void setup() {
   msg[IR_REAR_END_LEFT_IDX]  = 0x4D4E; // 77 78
   msg[IR_REAR_END_RIGHT_IDX] = 0x4F50; // 79 80
   msg[EXTRA_BITS_IDX]        = 0x5152; // 81 82
+
+  pinMode(MOTOR_PIN1, OUTPUT);
+  pinMode(MOTOR_PIN2, OUTPUT);
+  //TODO: Remove
+  pinMode(BLUE, OUTPUT);
+  digitalWrite(BLUE, HIGH);
+  //------
 }
 
 void loop() {
   //sendMessage();
   cmd_parseCommands();
+  motor_drive();
   delay(10);
 }
 
@@ -196,7 +215,6 @@ void sendBinary(uint32_t value) {
 }
 
 // ============== Commands ========================
-// Note: Serial.read has a 64byte buffer
 void cmd_parseCommands() {
     cmd_processStates();
 }
@@ -290,6 +308,7 @@ void cmd_parsePixelCmd() {
     uint8_t c;
     if (Serial.available()) {
         log(LOG_DEBUG, "Parsing Pixel Cmd...");
+        // Note: Serial.read has a 64byte buffer
         c = cmd_insertIntoBuffer(Serial.read());
         parsedByteCount++;
         if(parsedByteCount == CMD_CRC_SZ + CMD_OPCODE_SZ + CMD_PIXEL_PARAM_SZ) {
@@ -340,21 +359,29 @@ void cmd_executeMotorCmd() {
 
 void cmd_motorCW() {
     log(LOG_DEBUG, "Executing motor cw.");
+    motorPin1State = LOW;
+    motorPin2State = HIGH;
     cmdReadState = CMD_STATE_RESET;
 }
 
 void cmd_motorCCW() {
     log(LOG_DEBUG, "Executing motor ccw.");
+    motorPin1State = HIGH;
+    motorPin2State = LOW;
     cmdReadState = CMD_STATE_RESET;
 }
 
 void cmd_motorStop() {
     log(LOG_DEBUG, "Executing motor stop.");
+    motorPin1State = HIGH;
+    motorPin2State = HIGH;
     cmdReadState = CMD_STATE_RESET;
 }
 
 void cmd_motorBreak() {
     log(LOG_DEBUG, "Executing motor break.");
+    motorPin1State = HIGH;
+    motorPin2State = HIGH;
     cmdReadState = CMD_STATE_RESET;
 }
 
@@ -414,10 +441,16 @@ void cmd_reset() {
     logData();
 }
 
-void cmd_printBuffer() {
-    log("Debug", (const char*)commandBuffer);
-}
+//===========================================================
 
+//====== Motor Control =====================
+void motor_drive() {
+    digitalWrite(MOTOR_PIN1, motorPin1State);
+    digitalWrite(MOTOR_PIN2, motorPin2State);
+}
+//===========================================================
+
+//====== Logging =====================
 #ifdef ENABLE_LOGGING
 size_t log(const char* type, const char* str) {
     size_t d = Serial.print("##");
@@ -468,3 +501,4 @@ size_t logData() {
     return 0;
 }
 #endif
+//===========================================================
