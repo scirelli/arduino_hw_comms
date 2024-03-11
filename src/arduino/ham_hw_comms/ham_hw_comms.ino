@@ -80,6 +80,10 @@
 #define CMD_STATE_CHECK_OPCODE   8
 #define CMD_NUMBER_OF_STATES     9
 
+//--- Time ---
+#define ONE_SECOND 1000000
+//------------------------
+
 /*
 Basic layout                Example Motor command              Example Pixel Command
 ┏━━━━━━━━━━┓                  ┏━━━━━━━━━━━━━┓                  ┏━━━━━━━━━━┓
@@ -149,9 +153,16 @@ handler_t handlers[] = {
     [CMD_STATE_RESET] = &cmd_reset,
     [CMD_STATE_CHECK_OPCODE] = &cmd_checkOpCode
 };
+//--- Timing ---
+unsigned long startTime = 0,
+              frameTime = 0,
+              runTime = 0,
+              motorTiming = 0;
+//--------------
 //--- Motor Data ---
 int motorPin1State = HIGH;
-int motorPin2State = LOW;
+int motorPin2State = HIGH;
+int motorTemp = 0; //TODO: remove
 //----------------------
 
 void setup() {
@@ -169,17 +180,30 @@ void setup() {
 
   pinMode(MOTOR_PIN1, OUTPUT);
   pinMode(MOTOR_PIN2, OUTPUT);
-  //TODO: Remove
+  //--- TODO: Remove ---
   pinMode(BLUE, OUTPUT);
   digitalWrite(BLUE, HIGH);
-  //------
+  //--------------------
+  motorTiming = micros();
+  startTime = frameTime = micros();
 }
 
 void loop() {
-  //sendMessage();
+  sendMessage();
+  return;
   cmd_parseCommands();
   motor_drive();
   delay(10);
+
+  if(micros() - motorTiming > ONE_SECOND){
+      motorTemp = motorPin1State;
+      motorPin1State = motorPin2State;
+      motorPin2State = motorTemp;
+      motorTiming = micros();
+  }
+
+  runTime = micros() - startTime;
+  frameTime = micros() - frameTime;
 }
 
 void sendMessage() {

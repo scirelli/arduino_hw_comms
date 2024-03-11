@@ -2,6 +2,10 @@
 ```
 screen /dev/ttyACM1 9600
 ```
+Kill the screen session with
+```
+Ctrl+a k
+```
 
 ```
 screen -ls

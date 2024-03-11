@@ -142,9 +142,9 @@ class SerialClient{
   }
 
   setup() {
-    this.port = new SerialPort({ path: this.portPath, baudRate: 9600 }, this.errorHandler.bind(this));
-    this.port.on('error', (...args) => this.errorHandler(...args));
-    this.port.on('data',  (...args) => this.dataHandler(...args));
+    this.port = new SerialPort({ path: this.portPath, baudRate: 9600 }, this._errorHandler.bind(this));
+    this.port.on('error', (...args) => this._errorHandler(...args));
+    this.port.on('data',  (...args) => this._dataHandler(...args));
   }
 
   addMessageBuilder(messageBuilder) {
@@ -157,14 +157,34 @@ class SerialClient{
     return this;
   }
 
-  dataHandler() {
+  send(msg /*Uint8Array*/, responseTimeout = response_wait_timeout) {
+    if (!(msg instanceof Uint8Array) || msg === null || (msg instanceof Uint8Array && msg.length === 0)) return Promise.reject('Invalid Uint8Array or array is empty');
+    return new Promise((resolve, reject) => {
+      let timeout = setTimeout(() => {
+        this.resolvers.pop();
+        reject('Did not receive a response.');
+      }, responseTimeout);
+
+      let rezolvers = [resolve, reject, timeout];
+      this.resolvers.push(rezolvers);
+      port.write(msg, (err) => {
+        if (err) {
+          reject(err);
+          clearTimeout(timeout);
+          resolvers.pop();
+        }
+      });
+    });
+  }
+
+  _dataHandler() {
     this.messageBuilders.forEach(mb=>{
       mb.onData.apply(mb, arguments);
     });
     return this;
   }
 
-  errorHandler() {
+  _errorHandler() {
     this.errorHandlers.forEach(eh=>{
       eh.onError.apply(eh, arguments);
     });
