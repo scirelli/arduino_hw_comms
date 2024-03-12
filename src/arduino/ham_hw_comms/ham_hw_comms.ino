@@ -190,7 +190,6 @@ void setup() {
 
 void loop() {
   sendMessage();
-  return;
   cmd_parseCommands();
   motor_drive();
   delay(10);
@@ -362,7 +361,7 @@ void cmd_checkOpCode() {
 
 void cmd_executeMotorCmd() {
     uint8_t param = commandBuffer[CMD_CRC_SZ + CMD_OPCODE_SZ]; //Skip the CRC
-    Serial.print("Motor param: "); Serial.println(param);
+    Serial.print("##Motor param: "); Serial.println(param);
     switch(param) {
     case CMD_MOTOR_CW:
         cmd_motorCW();
