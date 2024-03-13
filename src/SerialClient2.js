@@ -1,5 +1,6 @@
 const fs = require('fs');
 const os = require('os');
+const logFactory = require('./logFactory.js');
 const { promisify } = require('util');
 const { SerialPort } = require('serialport');
 const { crc16_rev_update } = require('./crc16.js');
@@ -39,7 +40,7 @@ Comments are in the form
 # Some text \n
 This function only works on char arrays.
  */
-function stripComments(msg) {
+function stripComments(msg, commentCallback) {
   const KEEP = true,
 			  REMOVE = false;
   let state = KEEP,
@@ -52,7 +53,7 @@ function stripComments(msg) {
       state = REMOVE;
     }else if(c === newline) {
       state = KEEP;
-      DEFAULT_LOGGER.debug('Removed comment \'%s\'', comment);
+      commentCallback(comment);
       return REMOVE; //Remove the  newline
     }
     if(state === REMOVE) {
@@ -62,102 +63,51 @@ function stripComments(msg) {
   });
 }
 
-const swapEndianTransform = new Transform({
-    transform(chunk, encoding, callback) {
-      callback(null, swapEndian(chunk));
-    }
-  }),
-  removeComments = new Transform({
-    transform(chunk, encoding, callback) {
-      callback(null, stripComments(chunk));
-    }
-  });
-delimiterParser = new DelimiterParser({
-  delimiter:        Uint8Array.from([0xAD, 0xDE, 0xAF, 0xBE]),
-  includeDelimiter: true
-});
-
-function main() {
-  const logFactory = require('./logFactory.js');
-  const DEFAULT_LOGGER = logFactory.createLogger('SerialClient');
-
-  function openErrorHandler(err) {
-    if(err) return DEFAULT_LOGGER.error('Error: ', err.message);
-  }
-
-  const port = new SerialPort({
-    path:     '/dev/ttyACM0', baudRate: 9600,
-    autoOpen: false
-  },
-  openErrorHandler
-  );
-  const parser = port.pipe(delimiterParser).pipe(removeComments).pipe(swapEndianTransform);
-
-  //port.open(openErrorHandler);
-  let popen = promisify(port.open.bind(port));
-  popen().then(()=>{
-    DEFAULT_LOGGER.log('Port open!');
-    port.write(Buffer.from('Written from popen'));
-  }).catch(DEFAULT_LOGGER.error);
-
-  port.on('open', (msg)=>{
-    DEFAULT_LOGGER.log('On open called');
-    port.write(Buffer.from('Written from port.on.open'));
-  });
-  port.on('error', (err)=> {
-    if(err) DEFAULT_LOGGER.error('port.on.error %s', err);
-  });
-
-  parser.on('data', (msg)=>{
-    console.log(msg.toString());
-  });
-  // port.on('readable', function () {
-  //   console.log('Data:', port.read().toString());
-  // })
-  var wrtRtn = port.write('Hi Mom!');
-  DEFAULT_LOGGER.debug('write result %s', wrtRtn);
-  wrtRtn = port.write(Buffer.from('Hi Mom!'));
-  DEFAULT_LOGGER.debug('write result %s', wrtRtn);
-
-
-  function sendInterval() {
-    wrtRtn = port.write(Buffer.from('setTimeout'));
-    DEFAULT_LOGGER.debug('write result %s', wrtRtn);
-    port.drain((err)=>{
-      if(err) DEFAULT_LOGGER.error(err);
-      DEFAULT_LOGGER.debug('drained');
-      setTimeout(sendInterval, 1000);
-    });
-  }
-}
-
-module.exports.SerialClient = class SerialClient{
+module.exports.SerialClient = class SerialClient {
   static #DEFAULT_BAUD_RATE = 9600;
   static #BUFFER_CLEAR_DELAY = 5;
   static #INITIALIZE_TIMEOUT = 5000;
   static #RESPONSE_WAIT_TIMEOUT = 60000;
   static #DEFAULT_PATH = '/dev/ttyACM0';
+  static #DEFAULT_LOGGER = logFactory.createLogger('SerialClient');
 
-  constructor(portPath, autoOpen=true) {
+  constructor(portPath=SerialClient.#DEFAULT_PATH, autoOpen=true) {
     this.port = null;
     this.parser = null;
     this.autoOpen = autoOpen;
-    this.portPath = portPath || SerialClient.DEFAULT_PATH;
+    this.portPath = portPath || SerialClient.#DEFAULT_PATH;
     this.messageHandlers = [];
     this.errorHandlers = [];
+		this.logger = SerialClient.#DEFAULT_LOGGER;
 
     this.setup();
   }
 
   setup() {
+		const self = this;
+		const swapEndianTransform = new Transform({
+			transform(chunk, encoding, callback) {
+				callback(null, swapEndian(chunk));
+			}
+		}),
+		removeComments = new Transform({
+			transform(chunk, encoding, callback) {
+				callback(null, stripComments(chunk, c=>{self.logger.debug('Comment: \'', c, '\'');}));
+			}
+		}),
+		delimiterParser = new DelimiterParser({
+			delimiter:        Uint8Array.from([0xAD, 0xDE, 0xAF, 0xBE]),
+			includeDelimiter: true
+		});
+
     this.port = new SerialPort({
-      path:     this.portPath,
-      baudRate: SerialClient.DEFAULT_BAUD_RATE,
-      autoOpen: this.autoOpen
-    },
-    this._portOpenHandler.bind(this)
+				path:     this.portPath,
+				baudRate: SerialClient.#DEFAULT_BAUD_RATE,
+				autoOpen: this.autoOpen
+			},
+			this._portOpenHandler.bind(this)
     );
-    this.port.on('error', (...args) => this._errorHandler(...args));
+    this.port.on('error', this._errorHandler.bind(this));
 
     this.parser = this.port
 										  .pipe(delimiterParser)
@@ -190,10 +140,31 @@ module.exports.SerialClient = class SerialClient{
     return this;
   }
 
-  addErrorHandler(errorHandler) {
-    this.errorHandlers.push(errorHandler);
+	removeMsgHandler(handler) {
+		return this._removeHandler(this.messageHandlers, handler);
+	}
+
+  addErrorHandler(handler) {
+    this.errorHandlers.push(handler);
     return this;
   }
+
+	removeErrorHandler(handler) {
+		return this._removeHandler(this.errorHandlers, handler);
+	}
+
+	setLogger(l) {
+		this.logger = l;
+		return this;
+	}
+
+	_removeHandler(array, handler) {
+		let i = array.indexOf(hanlder);
+		if(i >= -1){
+			return array.splice(i, 1);
+		}
+		return null;
+	}
 
   _portOpenHandler(err) {
     if(err) this._errorHandler(err);
@@ -201,15 +172,98 @@ module.exports.SerialClient = class SerialClient{
 
   _dataHandler() {
     this.messageHandlers.forEach(mh=>{
-      mh.onData.apply(mh, arguments);
+      mh.apply(mh, arguments);
     });
     return this;
   }
 
   _errorHandler() {
     this.errorHandlers.forEach(eh=>{
-      eh.onError.apply(eh, arguments);
+      eh.apply(eh, arguments);
     });
     return this;
   }
 };
+
+function test_1() {
+  const DEFAULT_LOGGER = logFactory.createLogger('SerialClient');
+	const swapEndianTransform = new Transform({
+			transform(chunk, encoding, callback) {
+				callback(null, swapEndian(chunk));
+			}
+		}),
+		removeComments = new Transform({
+			transform(chunk, encoding, callback) {
+				callback(null, stripComments(chunk, (c)=>{process.stderr.write(c + '\n');}));
+			}
+		});
+		delimiterParser = new DelimiterParser({
+			delimiter:        Uint8Array.from([0xAD, 0xDE, 0xAF, 0xBE]),
+			includeDelimiter: true
+		}
+	);
+
+  function openErrorHandler(err) {
+    if(err) return DEFAULT_LOGGER.error('Error: ', err.message);
+  }
+
+  const port = new SerialPort({
+			path:     '/dev/ttyACM0', baudRate: 9600,
+			autoOpen: false
+		},
+		openErrorHandler
+  );
+  const parser = port.pipe(delimiterParser).pipe(removeComments).pipe(swapEndianTransform);
+
+  //port.open(openErrorHandler);
+  let popen = promisify(port.open.bind(port));
+  popen().then(()=>{
+    DEFAULT_LOGGER.log('Port open!');
+    port.write(Buffer.from('Written from popen'));
+  }).catch(DEFAULT_LOGGER.error);
+
+  port.on('open', (msg)=>{
+    DEFAULT_LOGGER.log('On open called');
+    port.write(Buffer.from('Written from port.on.open'));
+  });
+  port.on('error', (err)=> {
+    if(err) DEFAULT_LOGGER.error('port.on.error %s', err);
+  });
+
+  parser.on('data', (msg)=>{
+    console.log(msg.toString());
+  });
+  // port.on('readable', function () {
+  //   console.log('Data:', port.read().toString());
+  // })
+  // var wrtRtn = port.write('Hi Mom!');
+  // DEFAULT_LOGGER.debug('write result %s', wrtRtn);
+  // wrtRtn = port.write(Buffer.from('Hi Mom!'));
+  // DEFAULT_LOGGER.debug('write result %s', wrtRtn);
+
+
+  function sendInterval() {
+    wrtRtn = port.write(Buffer.from('setTimeout'));
+    DEFAULT_LOGGER.debug('write result %s', wrtRtn);
+    port.drain((err)=>{
+      if(err) DEFAULT_LOGGER.error(err);
+      DEFAULT_LOGGER.debug('drained');
+      setTimeout(sendInterval, 1000);
+    });
+  }
+	sendInterval();
+}
+
+function test_2() {
+	const client = new module.exports.SerialClient();
+	client.addErrorHandler(console.error);
+	client.addMsgHandler(m=>console.log(m.toString()));
+	client.send('Hello hardware!!');
+	setTimeout(()=>{
+		client.send('Delayed Start!');
+	}, 2000);
+}
+
+if(process.argv[0] === __filename || process.argv[1] === __filename) {
+	test_2();
+}
