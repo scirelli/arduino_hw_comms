@@ -70,6 +70,77 @@ module.exports.SerialClient = class SerialClient {
   static #RESPONSE_WAIT_TIMEOUT = 60000;
   static #DEFAULT_PATH = '/dev/ttyACM0';
   static #DEFAULT_LOGGER = logFactory.createLogger('SerialClient');
+  static #MESSAGE_BUFFER_SIZE = 24; //24bytes; 8 16bit words (16 bytes) IR readings, 1 16bit word (2 bytes) extra data, 1 16bit word (2 bytes) CRC, 2 16bit word (4 bytes) footer
+  static #MSG_CRC_LOW_BYTE = 18;
+  static #MSG_CRC_HIGH_BYTE = 19;
+  static #CONTENT_SZ = 18; // bytes
+
+	/*
+		returns the path to the simulated ham, or null if there isn't one
+	*/
+	static async getCarPort() {
+		return new Promise((resolve) => {
+			fs.realpath(os.homedir() + '/carport', (err, path) => resolve(path));
+		});
+	}
+
+	static async getDevices() {
+		let ports = await SerialPort.list();
+		let simport = await SerialClient.getCarPort();
+		let paths = ports.map((f) => f.path);
+		if (simport) paths.push(simport);
+		return paths;
+	}
+
+	static async getSerials() {
+		return SerialClient.getDevices().then((ports) => {
+			SerialClient.#DEFAULT_LOGGER.warn(ports);
+			return Promise.allSettled(
+				ports.map((port) => {
+					return new Promise((resolve, reject) => {
+						const client = new SerialClient(port);
+						const logger = logFactory.createLogger(`SerialClient:${port}`);
+						const initTimeout = setTimeout(()=>{
+							client.close();
+							reject({client, port, err:`'${port}' took to long to respond.`});
+						}, SerialClient.#INITIALIZE_TIMEOUT);
+						const errHandler = (err) => {
+							clearTimeout(initTimeout);
+							client.close();
+							reject({client, port, err});
+						};
+						const msgHandler = (msg) => {
+							clearTimeout(initTimeout);
+							client.removeMsgHandler(msgHandler);
+							client.removeErrorHandler(errHandler);
+							logger.info('Recieved a valid msg \'%s\'', msg);
+							resolve(client);
+						};
+
+						client
+							.setLogger(logger)
+							.addErrorHandler(errHandler)
+							.addMsgHandler(msgHandler);
+					});
+				})
+			).then((promises) => {
+				return promises.filter((promise) => promise.status === 'fulfilled').map((prommy) => prommy.value);
+			});
+		});
+	}
+
+	static isValidMessage(msgBuffer) {
+		let crc = 0,
+			msgCRC = ((msgBuffer[SerialClient.#MSG_CRC_LOW_BYTE]<<8) | msgBuffer[SerialClient.#MSG_CRC_HIGH_BYTE]);
+
+		//The pipe transform swaps endian, need to swap it back to check crc.
+		for(let i=0; i < SerialClient.#CONTENT_SZ; i+=2) {
+			crc = crc16_rev_update(crc, msgBuffer[i+1]);
+			crc = crc16_rev_update(crc, msgBuffer[i]);
+		}
+
+		return crc === msgCRC;
+	}
 
   constructor(portPath=SerialClient.#DEFAULT_PATH, autoOpen=true) {
     this.port = null;
@@ -78,34 +149,34 @@ module.exports.SerialClient = class SerialClient {
     this.portPath = portPath || SerialClient.#DEFAULT_PATH;
     this.messageHandlers = [];
     this.errorHandlers = [];
-		this.logger = SerialClient.#DEFAULT_LOGGER;
+    this.logger = SerialClient.#DEFAULT_LOGGER;
 
     this.setup();
   }
 
   setup() {
-		const self = this;
-		const swapEndianTransform = new Transform({
-			transform(chunk, encoding, callback) {
-				callback(null, swapEndian(chunk));
-			}
-		}),
-		removeComments = new Transform({
-			transform(chunk, encoding, callback) {
-				callback(null, stripComments(chunk, c=>{self.logger.debug('Comment: \'', c, '\'');}));
-			}
-		}),
-		delimiterParser = new DelimiterParser({
-			delimiter:        Uint8Array.from([0xAD, 0xDE, 0xAF, 0xBE]),
-			includeDelimiter: true
-		});
+    const self = this;
+    const swapEndianTransform = new Transform({
+        transform(chunk, encoding, callback) {
+          callback(null, swapEndian(chunk));
+        }
+      }),
+      removeComments = new Transform({
+        transform(chunk, encoding, callback) {
+          callback(null, stripComments(chunk, c=>{self.logger.debug('Comment: \'', c, '\'');}));
+        }
+      }),
+      delimiterParser = new DelimiterParser({
+        delimiter:        Uint8Array.from([0xAD, 0xDE, 0xAF, 0xBE]),
+        includeDelimiter: true
+      });
 
     this.port = new SerialPort({
-				path:     this.portPath,
-				baudRate: SerialClient.#DEFAULT_BAUD_RATE,
-				autoOpen: this.autoOpen
-			},
-			this._portOpenHandler.bind(this)
+      path:     this.portPath,
+      baudRate: SerialClient.#DEFAULT_BAUD_RATE,
+      autoOpen: this.autoOpen
+    },
+    this._portOpenHandler.bind(this)
     );
     this.port.on('error', this._errorHandler.bind(this));
 
@@ -124,6 +195,11 @@ module.exports.SerialClient = class SerialClient {
     });
   }
 
+	close() {
+		if(this.port.isOpen) this.port.close();
+		return this;
+	}
+
   send(msg) {
     return new Promise((resolve, reject)=> {
       //port.write - Returns false if the stream wishes for the calling code to wait for the drain event to be emitted before continuing to write additional data; otherwise true.
@@ -135,45 +211,51 @@ module.exports.SerialClient = class SerialClient {
     });
   }
 
+  write(msg) {
+    return this.port.write(Buffer.from(msg));
+  }
+
   addMsgHandler(handler) {
     this.messageHandlers.push(handler);
     return this;
   }
 
-	removeMsgHandler(handler) {
-		return this._removeHandler(this.messageHandlers, handler);
-	}
+  removeMsgHandler(handler) {
+    return this._removeHandler(this.messageHandlers, handler);
+  }
 
   addErrorHandler(handler) {
     this.errorHandlers.push(handler);
     return this;
   }
 
-	removeErrorHandler(handler) {
-		return this._removeHandler(this.errorHandlers, handler);
-	}
+  removeErrorHandler(handler) {
+    return this._removeHandler(this.errorHandlers, handler);
+  }
 
-	setLogger(l) {
-		this.logger = l;
-		return this;
-	}
+  setLogger(l) {
+    this.logger = l;
+    return this;
+  }
 
-	_removeHandler(array, handler) {
-		let i = array.indexOf(hanlder);
-		if(i >= -1){
-			return array.splice(i, 1);
-		}
-		return null;
-	}
+  _removeHandler(array, handler) {
+    let i = array.indexOf(handler);
+    if(i >= -1) {
+      return array.splice(i, 1);
+    }
+    return null;
+  }
 
   _portOpenHandler(err) {
     if(err) this._errorHandler(err);
   }
 
-  _dataHandler() {
-    this.messageHandlers.forEach(mh=>{
-      mh.apply(mh, arguments);
-    });
+  _dataHandler(msg) {
+		if(SerialClient.isValidMessage(msg)) {
+			this.messageHandlers.forEach(mh=>{
+				mh.apply(mh, arguments);
+			});
+		}
     return this;
   }
 
@@ -187,31 +269,31 @@ module.exports.SerialClient = class SerialClient {
 
 function test_1() {
   const DEFAULT_LOGGER = logFactory.createLogger('SerialClient');
-	const swapEndianTransform = new Transform({
-			transform(chunk, encoding, callback) {
-				callback(null, swapEndian(chunk));
-			}
-		}),
-		removeComments = new Transform({
-			transform(chunk, encoding, callback) {
-				callback(null, stripComments(chunk, (c)=>{process.stderr.write(c + '\n');}));
-			}
-		});
-		delimiterParser = new DelimiterParser({
-			delimiter:        Uint8Array.from([0xAD, 0xDE, 0xAF, 0xBE]),
-			includeDelimiter: true
-		}
-	);
+  const swapEndianTransform = new Transform({
+      transform(chunk, encoding, callback) {
+        callback(null, swapEndian(chunk));
+      }
+    }),
+    removeComments = new Transform({
+      transform(chunk, encoding, callback) {
+        callback(null, stripComments(chunk, (c)=>{process.stderr.write(c + '\n');}));
+      }
+    });
+  delimiterParser = new DelimiterParser({
+    delimiter:        Uint8Array.from([0xAD, 0xDE, 0xAF, 0xBE]),
+    includeDelimiter: true
+  }
+  );
 
   function openErrorHandler(err) {
     if(err) return DEFAULT_LOGGER.error('Error: ', err.message);
   }
 
   const port = new SerialPort({
-			path:     '/dev/ttyACM0', baudRate: 9600,
-			autoOpen: false
-		},
-		openErrorHandler
+    path:     '/dev/ttyACM0', baudRate: 9600,
+    autoOpen: false
+  },
+  openErrorHandler
   );
   const parser = port.pipe(delimiterParser).pipe(removeComments).pipe(swapEndianTransform);
 
@@ -251,19 +333,40 @@ function test_1() {
       setTimeout(sendInterval, 1000);
     });
   }
-	sendInterval();
+  sendInterval();
 }
 
 function test_2() {
-	const client = new module.exports.SerialClient();
-	client.addErrorHandler(console.error);
-	client.addMsgHandler(m=>console.log(m.toString()));
-	client.send('Hello hardware!!');
-	setTimeout(()=>{
-		client.send('Delayed Start!');
-	}, 2000);
+  const DEFAULT_LOGGER = logFactory.createLogger('SerialClient');
+  const client = new module.exports.SerialClient();
+  client.addErrorHandler(console.error);
+  client.addMsgHandler(m=>console.log(m.toString()));
+	DEFAULT_LOGGER.log('Sending a msg');
+  client.send('Hello hardware!!').catch(DEFAULT_LOGGER.error);
+}
+
+function test_3() {
+  const DEFAULT_LOGGER = logFactory.createLogger('SerialClient');
+  const client = new module.exports.SerialClient('/dev/ttyACM0', false);
+  client.addErrorHandler(console.error);
+  client.addMsgHandler(m=>console.log(m.toString()));
+  client.open().then(()=>{
+		return new Promise(resolve=>{
+			DEFAULT_LOGGER.log('Delaying send');
+			setTimeout(resolve, 2000);
+		});
+  }).then(()=>{
+		DEFAULT_LOGGER.log('Msg sent');
+		client.send('Omfg hello world').catch(DEFAULT_LOGGER.error);
+	});
+}
+
+function test_4() {
+	module.exports.SerialClient.getSerials().then((clients)=>{
+		clients.forEach(c=>c.close());
+	});
 }
 
 if(process.argv[0] === __filename || process.argv[1] === __filename) {
-	test_2();
+  test_4();
 }

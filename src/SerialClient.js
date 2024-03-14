@@ -65,7 +65,6 @@ class  MessageBuilder extends IDataHandler{
       crc = crc16_rev_update(crc, this.msgBuffer[i]);
     }
 
-    
     return crc === msgCRC;
   }
 

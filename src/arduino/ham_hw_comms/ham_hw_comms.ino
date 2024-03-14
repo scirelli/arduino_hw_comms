@@ -66,7 +66,7 @@
 #define CMD_MOTOR_CCW    2
 #define CMD_MOTOR_CW     3
 
-#define CMD_PIXEL_PARAM_SZ  5
+#define CMD_PIXEL_PARAM_SZ  6
 #define CMD_PIXEL_CMD_SZ    (CMD_CRC_SZ + CMD_OPCODE_SZ + CMD_PIXEL_PARAM_SZ)
 
 #define CMD_STATE_HEADER_SEARCH  0
@@ -93,16 +93,19 @@ Basic layout                Example Motor command              Example Pixel Com
 ┠──────────┨                  ┠─────────────┨                  ┠──────────┨
 ┃ OPCODE   ┃ 1 byte           ┃   67        ┃ 1 byte           ┃ 73       ┃ 1 byte
 ┠──────────┨                  ┠─────────────┨                  ┠──────────┨
-┃ PARAM 1  ┃ 1 byte           ┃ 0b00000001  ┃ 1 byte (Pins)    ┃ 1        ┃ 1 byte (Start index)
+┃ PARAM 1  ┃ 1 byte           ┃ 0b00000001  ┃ 1 byte (Pins)    ┃ 120      ┃ 1 byte (strip length)
 ┠──────────┨                  ┗━━━━━━━━━━━━━┛                  ┠──────────┨
-┃ PARAM N  ┃ N bytes                                           ┃ 5        ┃ 1 byte (length)
+┃ PARAM N  ┃ N bytes                                           ┃ 1        ┃ 1 byte (Start index)
 ┗━━━━━━━━━━┛                                                   ┠──────────┨
+                                                               ┃ 5        ┃ 1 byte (length)
+                                                               ┠──────────┨
                                                                ┃ 0xFF     ┃ 1 byte (red)
                                                                ┠──────────┨
                                                                ┃ 0x00     ┃ 1 byte (green)
                                                                ┠──────────┨
                                                                ┃ 0x0F     ┃ 1 byte (blue)
                                                                ┗━━━━━━━━━━┛
+
 Example command: Motor command;
 STEVq C?
 
