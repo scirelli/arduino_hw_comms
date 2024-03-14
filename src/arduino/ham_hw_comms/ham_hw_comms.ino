@@ -9,7 +9,7 @@
 //int 16bits
 //long 32 bits
 
-#define ENABLE_LOGGING
+//#define ENABLE_LOGGING
 
 //--- Transmit message layout --- 24 bytes including CRC and TX_DELIM. Word indexes
 #define IR_FRONT_LEFT_IDX     0
@@ -112,8 +112,10 @@ STEVq C?
 */
 //------------------------------------
 
+//--- TX ----------------
 const uint32_t TX_DELIM = 0xDEADBEAF; // 222 173 190 175
 uint16_t msg[CONTENT_SZ];
+//-----------------------
 
 //--- RX Command ---
 void cmd_parseCommands();
@@ -133,7 +135,7 @@ int cmd_getCmdLength();
 uint8_t cmd_getOpCode();
 uint16_t cmd_getCRC();
 uint8_t cmd_insertIntoBuffer();
-bool cmd_isValidateCRC();
+bool cmd_isValidCommand();
 
 //--- Types ---
 typedef bool (*handler_t)();
@@ -159,8 +161,7 @@ handler_t handlers[] = {
 //--- Timing ---
 unsigned long startTime = 0,
               frameTime = 0,
-              runTime = 0,
-              motorTiming = 0;
+              runTime = 0;
 //--------------
 //--- Motor Data ---
 int motorPin1State = HIGH;
@@ -187,7 +188,6 @@ void setup() {
   pinMode(BLUE, OUTPUT);
   digitalWrite(BLUE, HIGH);
   //--------------------
-  motorTiming = micros();
   startTime = frameTime = micros();
 }
 
@@ -196,13 +196,6 @@ void loop() {
   cmd_parseCommands();
   motor_drive();
   delay(10);
-
-  if(micros() - motorTiming > ONE_SECOND){
-      motorTemp = motorPin1State;
-      motorPin1State = motorPin2State;
-      motorPin2State = motorTemp;
-      motorTiming = micros();
-  }
 
   runTime = micros() - startTime;
   frameTime = micros() - frameTime;
@@ -242,6 +235,9 @@ void sendBinary(uint32_t value) {
 
 // ============== Commands ========================
 void cmd_parseCommands() {
+    cmd_processStates();
+    cmd_processStates();
+    cmd_processStates();
     cmd_processStates();
 }
 
@@ -364,7 +360,6 @@ void cmd_checkOpCode() {
 
 void cmd_executeMotorCmd() {
     uint8_t param = commandBuffer[CMD_CRC_SZ + CMD_OPCODE_SZ]; //Skip the CRC
-    Serial.print("##Motor param: "); Serial.println(param);
     switch(param) {
     case CMD_MOTOR_CW:
         cmd_motorCW();
@@ -417,10 +412,11 @@ void cmd_executePixelCmd() {
 
 void cmd_validateCRC() {
     log(LOG_DEBUG, "Validating CRC");
-    if(cmd_isValidateCRC()) {
+    if(cmd_isValidCommand()) {
         log(LOG_DEBUG, "Valid CRC");
         cmdReadState = CMD_STATE_CHECK_OPCODE;
     }else{
+        log(LOG_DEBUG, "Invalid CRC");
         cmdReadState = CMD_STATE_RESET;
     }
 }
@@ -443,7 +439,7 @@ int cmd_getCmdLength() {
   return t - cmdStartIdx;
 }
 
-bool cmd_isValidateCRC() {
+bool cmd_isValidCommand() {
     uint16_t crc = 0;
 
     for (unsigned int i=2; i<parsedByteCount; i++) {

@@ -1,5 +1,6 @@
 const fs = require('fs');
 const os = require('os');
+require('./Function.js');
 const logFactory = require('./logFactory.js');
 const { promisify } = require('util');
 const { SerialPort } = require('serialport');
@@ -8,6 +9,33 @@ const { DelimiterParser, TransformOptions} = require('@serialport/parser-delimit
 const { Transform } = require('stream');
 
 const unsigned = _=>_>>>0;
+const delay = (time, ...args) => new Promise(resolve=>setTimeout(resolve, time, ...args));
+
+const CMD_DELIM = 0x53_54_45_56;
+const motorBreakMsg = Uint8Array.from([
+		0x53, 0x54, 0x45, 0x56, // Header/Delim
+		0x31, 0x30,						  // CRC
+		0x43,										// Motor Op Code
+		0x0		    						  // Param 1
+	]),
+	motorStopMsg = Uint8Array.from([
+		0x53, 0x54, 0x45, 0x56, // Header/Delim
+		0xF0, 0xF0,						  // CRC
+		0x43,										// Motor Op Code
+		0x1		    						  // Param 1
+	]),
+	motorCCWMsg = Uint8Array.from([
+		0x53, 0x54, 0x45, 0x56, // Header/Delim
+		0xB0, 0xF1,						  // CRC
+		0x43,										// Motor Op Code
+		0x2		    						  // Param 1
+	]),
+	motorCWMsg = Uint8Array.from([
+		0x53, 0x54, 0x45, 0x56, // Header/Delim
+		0x71, 0x31,						  // CRC
+		0x43,										// Motor Op Code
+		0x3		    						  // Param 1
+	]);
 
 function toBigEndianWord(msg) {
   let m = new Uint16Array(msg.length/2);
@@ -63,6 +91,12 @@ function stripComments(msg, commentCallback) {
   });
 }
 
+module.exports.unsigned = unsigned;
+module.exports.toBigEndianWord = toBigEndianWord;
+module.exports.to16bitWord = to16bitWord;
+module.exports.swapEndian = swapEndian;
+module.exports.crc16_rev_update =  crc16_rev_update;
+
 module.exports.SerialClient = class SerialClient {
   static #DEFAULT_BAUD_RATE = 9600;
   static #BUFFER_CLEAR_DELAY = 5;
@@ -74,6 +108,7 @@ module.exports.SerialClient = class SerialClient {
   static #MSG_CRC_LOW_BYTE = 18;
   static #MSG_CRC_HIGH_BYTE = 19;
   static #CONTENT_SZ = 18; // bytes
+	static #MSG_DELIM = Uint8Array.from([0xAD, 0xDE, 0xAF, 0xBE]);
 
 	/*
 		returns the path to the simulated ham, or null if there isn't one
@@ -163,11 +198,13 @@ module.exports.SerialClient = class SerialClient {
       }),
       removeComments = new Transform({
         transform(chunk, encoding, callback) {
-          callback(null, stripComments(chunk, c=>{self.logger.debug('Comment: \'', c, '\'');}));
+          callback(null, stripComments(chunk, c=>{
+						self.logger.debug('\'%s\'', c.replaceAll('\r', '').replaceAll('\n',''));
+					}));
         }
       }),
       delimiterParser = new DelimiterParser({
-        delimiter:        Uint8Array.from([0xAD, 0xDE, 0xAF, 0xBE]),
+        delimiter:        SerialClient.#MSG_DELIM,
         includeDelimiter: true
       });
 
@@ -206,7 +243,7 @@ module.exports.SerialClient = class SerialClient {
       this.port.write(Buffer.from(msg));
       this.port.drain((err)=> {
         if(err) reject(err);
-        else resolve(msg);
+        else resolve(this);
       });
     });
   }
@@ -268,7 +305,7 @@ module.exports.SerialClient = class SerialClient {
 };
 
 function test_1() {
-  const DEFAULT_LOGGER = logFactory.createLogger('SerialClient');
+  const DEFAULT_LOGGER = logFactory.createLogger('Test1');
   const swapEndianTransform = new Transform({
       transform(chunk, encoding, callback) {
         callback(null, swapEndian(chunk));
@@ -286,7 +323,7 @@ function test_1() {
   );
 
   function openErrorHandler(err) {
-    if(err) return DEFAULT_LOGGER.error('Error: ', err.message);
+    if(err) return DEFAULT_LOGGER.error(err.message);
   }
 
   const port = new SerialPort({
@@ -337,7 +374,7 @@ function test_1() {
 }
 
 function test_2() {
-  const DEFAULT_LOGGER = logFactory.createLogger('SerialClient');
+  const DEFAULT_LOGGER = logFactory.createLogger('Test2');
   const client = new module.exports.SerialClient();
   client.addErrorHandler(console.error);
   client.addMsgHandler(m=>console.log(m.toString()));
@@ -346,7 +383,7 @@ function test_2() {
 }
 
 function test_3() {
-  const DEFAULT_LOGGER = logFactory.createLogger('SerialClient');
+  const DEFAULT_LOGGER = logFactory.createLogger('Test3');
   const client = new module.exports.SerialClient('/dev/ttyACM0', false);
   client.addErrorHandler(console.error);
   client.addMsgHandler(m=>console.log(m.toString()));
@@ -367,6 +404,20 @@ function test_4() {
 	});
 }
 
+function test_5() {
+	module.exports.SerialClient.getSerials().then(async function(clients) {
+		const client = clients[0];
+		client.addMsgHandler(m=>console.log(m.toString()));
+		for(let i=0; i<100; i++){
+			await client.send.delay(client, 100, motorCCWMsg);
+			await client.send.delay(client, 100, motorCWMsg);
+			console.log(i);
+		}
+		await delay(2000);
+		clients.forEach(c=>c.close());
+	});
+}
+
 if(process.argv[0] === __filename || process.argv[1] === __filename) {
-  test_4();
+  test_5();
 }
