@@ -1,6 +1,8 @@
 /*
  * HAM HW Commuinication
  *
+ * Refences:
+ *  https://www.ascii-code.com
 */
 #include <stdbool.h>
 #include <util/crc16.h>
@@ -9,9 +11,14 @@
 //int 16bits
 //long 32 bits
 
-//#define ENABLE_LOGGING
+#define ENABLE_LOGGING
+#define LOG_DEBUG "Debug"
+#define LOG_WARN "Warning"
+#define LOG_INFO "Info"
 
-//--- Transmit message layout --- 24 bytes including CRC and TX_DELIM. Word indexes
+#define MAIN_LOOP_DELAY 10
+
+//--- TX message layout --- 24 bytes including CRC and TX_DELIM. Word indexes
 #define IR_FRONT_LEFT_IDX     0
 #define IR_FRONT_RIGHT_IDX    1
 #define IR_MIDDLE_LEFT_IDX    2
@@ -26,11 +33,7 @@
 #define MOTOR_OVER_CURRENT_BIT 0b00000001
 #define MAINTENANCE_DOOR_BIT   0b00000010
 
-#define LOG_DEBUG "Debug"
-#define LOG_WARN "Warning"
-#define LOG_INFO "Info"
-
-//--- Receive msg/Commands Layout ---
+//--- RX msg/Commands Layout ---
 //--- Message --- byte index
 #define CMD_OPCODE_IDX      0
 #define CMD_CRC_IDX         1 // Reuse the same crc16 code
@@ -53,6 +56,7 @@
 
 #define CMD_OPCODE_MOTOR    67  // C
 #define CMD_OPCODE_LED      73  // I
+#define CMD_OPCODE_GPIO     52  // R
 
 #define CMD_MAX_SZ          16
 #define CMD_HEADER_SZ       4
@@ -68,6 +72,11 @@
 
 #define CMD_PIXEL_PARAM_SZ  6
 #define CMD_PIXEL_CMD_SZ    (CMD_CRC_SZ + CMD_OPCODE_SZ + CMD_PIXEL_PARAM_SZ)
+
+// The Arduino Uno has 14 Digital I/O pins. Increase the byte count for more GPIO
+// Bit map to control GPIO pins                  98   76543210
+#define CMD_GPIO_PARAM_SZ  2  // 2 bytes 0b00000000 0b00000000
+#define CMD_GPIO_CMD_SZ    (CMD_CRC_SZ + CMD_OPCODE_SZ + CMD_GPIO_PARAM_SZ)
 
 #define CMD_STATE_HEADER_SEARCH  0
 #define CMD_STATE_HEADER_FOUND   1
@@ -127,6 +136,7 @@ void cmd_validateCRC();
 void cmd_parseOptCode();
 void cmd_parseMotorCmd();
 void cmd_parsePixelCmd();
+void cmd_parseGPIOCmd();
 void cmd_reset();
 void cmd_checkOpCode();
 void cmd_executeMotorCmd();
@@ -148,15 +158,16 @@ int cmdStartIdx      = 0;
 int parsedByteCount  = 0;
 int commandBufIdx    = 0;
 handler_t handlers[] = {
-    [CMD_STATE_HEADER_SEARCH] = &cmd_headerSearch,
-    [CMD_STATE_HEADER_FOUND] = &cmd_headerFound,
-    [CMD_STATE_READ_CRC] = &cmd_parseCRC,
-    [CMD_STATE_READ_OPCODE] = &cmd_parseOptCode,
+    [CMD_STATE_HEADER_SEARCH]  = &cmd_headerSearch,
+    [CMD_STATE_HEADER_FOUND]   = &cmd_headerFound,
+    [CMD_STATE_READ_CRC]       = &cmd_parseCRC,
+    [CMD_STATE_READ_OPCODE]    = &cmd_parseOptCode,
     [CMD_STATE_READ_MOTOR_CMD] = &cmd_parseMotorCmd,
     [CMD_STATE_READ_PIXEL_CMD] = &cmd_parsePixelCmd,
-    [CMD_STATE_VALIDATE_CMD] = &cmd_validateCRC,
-    [CMD_STATE_RESET] = &cmd_reset,
-    [CMD_STATE_CHECK_OPCODE] = &cmd_checkOpCode
+    [CMD_STATE_READ_GPIO_CMD]  = &cmd_parseGPIOCmd,
+    [CMD_STATE_VALIDATE_CMD]   = &cmd_validateCRC,
+    [CMD_STATE_RESET]          = &cmd_reset,
+    [CMD_STATE_CHECK_OPCODE]   = &cmd_checkOpCode
 };
 //--- Timing ---
 unsigned long startTime = 0,
@@ -303,6 +314,10 @@ void cmd_parseOptCode() {
             log(LOG_DEBUG, "Found pixel opcode");
             cmdReadState = CMD_STATE_READ_PIXEL_CMD;
             break;
+        case CMD_OPCODE_GPIO:
+            log(LOG_DEBUG, "Found gpio opcode");
+            cmdReadState = CMD_STATE_READ_GPIO_CMD;
+            break;
         default:
             log(LOG_DEBUG, "Invalid op code");
             cmdReadState = CMD_STATE_RESET;
@@ -331,6 +346,21 @@ void cmd_parsePixelCmd() {
     if (Serial.available()) {
         log(LOG_DEBUG, "Parsing Pixel Cmd...");
         // Note: Serial.read has a 64byte buffer
+        c = cmd_insertIntoBuffer(Serial.read());
+        parsedByteCount++;
+        if(parsedByteCount == CMD_CRC_SZ + CMD_OPCODE_SZ + CMD_PIXEL_PARAM_SZ) {
+            cmdReadState = CMD_STATE_VALIDATE_CMD;
+        }else if(parsedByteCount > CMD_CRC_SZ + CMD_OPCODE_SZ + CMD_PIXEL_PARAM_SZ) {
+            cmdReadState = CMD_STATE_RESET;
+        }
+        logData();
+    }
+}
+
+void cmd_parseGPIOCmd() {
+    uint8_t c;
+    if (Serial.available()) {
+        log(LOG_DEBUG, "Parsing GPIO Cmd...");
         c = cmd_insertIntoBuffer(Serial.read());
         parsedByteCount++;
         if(parsedByteCount == CMD_CRC_SZ + CMD_OPCODE_SZ + CMD_PIXEL_PARAM_SZ) {
