@@ -1,10 +1,24 @@
 /*
- * HAM HW Commuinication
- *
- * Refences:
- *  https://www.ascii-code.com
- *  https://store-usa.arduino.cc/products/arduino-uno-rev3
- *  https://content.arduino.cc/assets/A000066-pinout.png
+   HAM HW Commuinication
+
+   Refences:
+    https://www.ascii-code.com
+    https://store-usa.arduino.cc/products/arduino-uno-rev3
+    https://content.arduino.cc/assets/A000066-pinout.png
+
+    https://www.ti.com/lit/ds/symlink/drv8231a.pdf
+   ┏━━━━━━━━━━┯━━━━━━━━━━┯━━━━━━━━━━┯━━━━━━━━━━┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+   ┃   IN1    │   IN2    │   OUT1   │   OUT2   │                          Description                                 ┃
+   ┠──────────┼──────────┼──────────┼──────────┼──────────────────────────────────────────────────────────────────────┨
+   ┃    0     │    0     │  High-Z  │ High-Z   │ Coast; H-bridge disabled to High-Z (sleep entered after 1ms)         ┃
+   ┠──────────┼──────────┼──────────┼──────────┼──────────────────────────────────────────────────────────────────────┨
+   ┃    0     │    1     │    L     │    H     │ Reverse (Current OUT2 -> OUT1)                                       ┃
+   ┠──────────┼──────────┼──────────┼──────────┼──────────────────────────────────────────────────────────────────────┨
+   ┃    1     │    0     │    H     │    L     │ Forward (Current OUT1 -> OUT2)                                       ┃
+   ┠──────────┼──────────┼──────────┼──────────┼──────────────────────────────────────────────────────────────────────┨
+   ┃    1     │    1     │    L     │    L     │ Brake; low-side slow decay                                           ┃
+   ┗━━━━━━━━━━┷━━━━━━━━━━┷━━━━━━━━━━┷━━━━━━━━━━┷━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
 */
 #include <stdbool.h>
 #include <util/crc16.h>
@@ -32,40 +46,45 @@
 #define ADDR_ADS_2 0x49
 
 //--- TX message layout --- 24 bytes including CRC and TX_DELIM. Word indexes
-#define IR_FRONT_LEFT_IDX     0
-#define IR_FRONT_RIGHT_IDX    1
-#define IR_MIDDLE_LEFT_IDX    2
-#define IR_MIDDLE_RIGHT_IDX   3
-#define IR_REAR_LEFT_IDX      4
-#define IR_REAR_RIGHT_IDX     5
-#define IR_REAR_END_LEFT_IDX  6
-#define IR_REAR_END_RIGHT_IDX 7
+#define ADS1_PIN_0_IDX        0
+#define ADS1_PIN_1_IDX        1
+#define ADS1_PIN_2_IDX        2
+#define ADS1_PIN_3_IDX        3
+#define ADS2_PIN_0_IDX        4
+#define ADS2_PIN_1_IDX        5
+#define ADS2_PIN_2_IDX        6
+#define ADS2_PIN_3_IDX        7
 #define EXTRA_BITS_IDX        8
 #define CONTENT_SZ            9
 
-#define MOTOR_OVER_CURRENT_BIT 0b00000001
-#define MAINTENANCE_DOOR_BIT   0b00000010
+#define MOTOR_OVERCURRENT_BIT 0
+#define DOOR_SWITCH_BIT       1
+#define MOTOR_LIMIT_ONE_BIT   2
+#define MOTOR_LIMIT_TWO_BIT   3
+
 
 //---- Pins ----
-#define OVERCURRENT_PIN 2
-#define MOTOR_PIN1      4
-#define MOTOR_PIN2      5
-#define NEOPIXEL        6
-#define DOOR_SWITCH_PIN 7
-#define IR_ENABLE_PIN1  8
-#define IR_ENABLE_PIN2  9
+#define OVERCURRENT_PIN      2
+#define MOTOR_PIN1           4
+#define MOTOR_PIN2           5
+#define MOTOR_LIMIT_ONE_PIN  10
+#define MOTOR_LIMIT_TWO_PIN  11
+#define NEOPIXEL             6
+#define DOOR_SWITCH_PIN      7
+#define IR_ENABLE_PIN1       8
+#define IR_ENABLE_PIN2       9
 
 //---- ADS1015 ----
 //left side
-#define ADS1_FRONT_LEFT      0
-#define ADS1_MID_LEFT        1
-#define ADS1_REAR_LEFT       2
-#define ADS1_REAR_END_LEFT   3
+#define ADS1_PIN_0  0
+#define ADS1_PIN_1  1
+#define ADS1_PIN_2  2
+#define ADS1_PIN_3  3
 //Right side
-#define ADS2_FRONT_RIGHT     0
-#define ADS2_MID_RIGHT       1
-#define ADS2_REAR_RIGHT      2
-#define ADS2_REAR_END_RIGHT  3
+#define ADS2_PIN_0  0
+#define ADS2_PIN_1  1
+#define ADS2_PIN_2  2
+#define ADS2_PIN_3  3
 
 
 //--- RX msg/Commands Layout ---
@@ -100,7 +119,7 @@
 
 #define CMD_MOTOR_PARAM_SZ  1
 #define CMD_MOTOR_CMD_SZ    (CMD_CRC_SZ + CMD_OPCODE_SZ + CMD_MOTOR_PARAM_SZ)
-#define CMD_MOTOR_BREAK  0
+#define CMD_MOTOR_BRAKE  0
 #define CMD_MOTOR_STOP   1
 #define CMD_MOTOR_CCW    2
 #define CMD_MOTOR_CW     3
@@ -161,8 +180,7 @@ STEVq C?
 void pinSetup(uint16_t);
 void readPeripherals();
 void readIR();
-void readDoorSwitch();
-void readOvercurrent();
+void readGPIO();
 void sendMessage();
 uint16_t calcCRC();
 void sendBinary(uint16_t);
@@ -241,8 +259,8 @@ void setup() {
 
   irSetup();
   neoPixelSetup();
-  Serial.begin(9600);
   pinSetup();
+  Serial.begin(9600);
   startTime = frameTime = micros();
 }
 
@@ -259,38 +277,36 @@ void loop() {
 // ==================================================
 void readPeripherals() {
     readIR();
-    readDoorSwitch();
-    readOvercurrent();
+    readGPIO();
+}
+
+void readGPIO() {
+    msg[EXTRA_BITS_IDX] = digitalRead(MOTOR_LIMIT_ONE_PIN) ? msg[EXTRA_BITS_IDX] | (1 << MOTOR_LIMIT_ONE_BIT  ) : msg[EXTRA_BITS_IDX] & ~(1 << MOTOR_LIMIT_ONE_BIT  );
+    msg[EXTRA_BITS_IDX] = digitalRead(MOTOR_LIMIT_TWO_PIN) ? msg[EXTRA_BITS_IDX] | (1 << MOTOR_LIMIT_TWO_BIT  ) : msg[EXTRA_BITS_IDX] & ~(1 << MOTOR_LIMIT_TWO_BIT  );
+    msg[EXTRA_BITS_IDX] = digitalRead(DOOR_SWITCH_PIN)     ? msg[EXTRA_BITS_IDX] | (1 << DOOR_SWITCH_BIT      ) : msg[EXTRA_BITS_IDX] & ~(1 << DOOR_SWITCH_BIT      );
+    msg[EXTRA_BITS_IDX] = digitalRead(OVERCURRENT_PIN)     ? msg[EXTRA_BITS_IDX] | (1 << MOTOR_OVERCURRENT_BIT) : msg[EXTRA_BITS_IDX] & ~(1 << MOTOR_OVERCURRENT_BIT);
 }
 
 void readIR() {
     //results = ads1015.readADC_Differential_0_1();
     //Note will be stored little endian
-    msg[IR_FRONT_LEFT_IDX]     = 0x4142; // 65 66
-    msg[IR_FRONT_RIGHT_IDX]    = 0x4344; // 67 68
-    msg[IR_MIDDLE_LEFT_IDX]    = 0x4546; // 69 70
-    msg[IR_MIDDLE_RIGHT_IDX]   = 0x4748; // 71 72
-    msg[IR_REAR_LEFT_IDX]      = 0x494A; // 73 74
-    msg[IR_REAR_RIGHT_IDX]     = 0x4B4C; // 75 76
-    msg[IR_REAR_END_LEFT_IDX]  = 0x4D4E; // 77 78
-    msg[IR_REAR_END_RIGHT_IDX] = 0x4F50; // 79 80
+    msg[ADS1_PIN_0_IDX] = 0x4142; // 65 66
+    msg[ADS1_PIN_1_IDX] = 0x4344; // 67 68
+    msg[ADS1_PIN_2_IDX] = 0x4546; // 69 70
+    msg[ADS1_PIN_3_IDX] = 0x4748; // 71 72
+    msg[ADS2_PIN_0_IDX] = 0x494A; // 73 74
+    msg[ADS2_PIN_1_IDX] = 0x4B4C; // 75 76
+    msg[ADS2_PIN_2_IDX] = 0x4D4E; // 77 78
+    msg[ADS2_PIN_3_IDX] = 0x4F50; // 79 80
 
-    /* msg[IR_FRONT_LEFT_IDX]     = ads1015_1.readADC_SingleEnded(ADS1_FRONT_LEFT); */
-    /* msg[IR_FRONT_RIGHT_IDX]    = ads1015_2.readADC_SingleEnded(ADS2_FRONT_RIGHT); */
-    /* msg[IR_MIDDLE_LEFT_IDX]    = ads1015_1.readADC_SingleEnded(ADS1_MID_LEFT); */
-    /* msg[IR_MIDDLE_RIGHT_IDX]   = ads1015_2.readADC_SingleEnded(ADS2_MID_RIGHT); */
-    /* msg[IR_REAR_LEFT_IDX]      = ads1015_1.readADC_SingleEnded(ADS1_REAR_LEFT); */
-    /* msg[IR_REAR_RIGHT_IDX]     = ads1015_2.readADC_SingleEnded(ADS2_REAR_RIGHT); */
-    /* msg[IR_REAR_END_LEFT_IDX]  = ads1015_1.readADC_SingleEnded(ADS1_REAR_END_LEFT); */
-    /* msg[IR_REAR_END_RIGHT_IDX] = ads1015_2.readADC_SingleEnded(ADS2_REAR_END_RIGHT); */
-}
-
-void readDoorSwitch() {
-    msg[EXTRA_BITS_IDX]        = 0x5152; // 81 82
-}
-
-void readOvercurrent() {
-    msg[EXTRA_BITS_IDX]        = 0x5152; // 81 82
+    /* msg[ADS1_PIN_0_IDX] = ads1015_1.readADC_SingleEnded(ADS1_PIN_0); */
+    /* msg[ADS1_PIN_1_IDX] = ads1015_2.readADC_SingleEnded(ADS1_PIN_1); */
+    /* msg[ADS1_PIN_2_IDX] = ads1015_1.readADC_SingleEnded(ADS1_PIN_2); */
+    /* msg[ADS1_PIN_3_IDX] = ads1015_2.readADC_SingleEnded(ADS1_PIN_3); */
+    /* msg[ADS2_PIN_0_IDX] = ads1015_1.readADC_SingleEnded(ADS2_PIN_0); */
+    /* msg[ADS2_PIN_1_IDX] = ads1015_2.readADC_SingleEnded(ADS2_PIN_1); */
+    /* msg[ADS2_PIN_2_IDX] = ads1015_1.readADC_SingleEnded(ADS2_PIN_2); */
+    /* msg[ADS2_PIN_3_IDX] = ads1015_2.readADC_SingleEnded(ADS2_PIN_3); */
 }
 
 void sendMessage() {
@@ -326,12 +342,18 @@ void sendBinary(uint32_t value) {
 }
 
 void pinSetup(uint16_t pinModes) {
-  pinMode(MOTOR_PIN1, OUTPUT);
-  pinMode(MOTOR_PIN2, OUTPUT);
-  pinMode(IR_ENABLE_PIN1, OUTPUT);
-  pinMode(IR_ENABLE_PIN2, OUTPUT);
-  pinMode(OVERCURRENT_PIN, INPUT);
-  pinMode(DOOR_SWITCH_PIN, INPUT);
+    pinMode(MOTOR_PIN1, OUTPUT);
+    pinMode(MOTOR_PIN2, OUTPUT);
+    pinMode(MOTOR_LIMIT_ONE_PIN, INPUT_PULLUP);
+    pinMode(MOTOR_LIMIT_TWO_PIN, INPUT_PULLUP);
+
+    pinMode(IR_ENABLE_PIN1, OUTPUT);
+    pinMode(IR_ENABLE_PIN2, OUTPUT);
+    digitalWrite(IR_ENABLE_PIN1, HIGH);
+    digitalWrite(IR_ENABLE_PIN2, HIGH);
+
+    pinMode(OVERCURRENT_PIN, INPUT);
+    pinMode(DOOR_SWITCH_PIN, INPUT);
 }
 
 void irSetup() {
@@ -489,7 +511,7 @@ void cmd_executeMotorCmd() {
     case CMD_MOTOR_CCW:
         cmd_motorCCW();
         break;
-    case CMD_MOTOR_BREAK:
+    case CMD_MOTOR_BRAKE:
         cmd_motorBreak();
         break;
     case CMD_MOTOR_STOP:
@@ -503,24 +525,24 @@ void cmd_executeMotorCmd() {
 
 void cmd_motorCW() {
     log(LOG_DEBUG, "Executing motor cw.");
-    digitalWrite(MOTOR_PIN1, LOW);
-    digitalWrite(MOTOR_PIN2, HIGH);
-}
-
-void cmd_motorCCW() {
-    log(LOG_DEBUG, "Executing motor ccw.");
     digitalWrite(MOTOR_PIN1, HIGH);
     digitalWrite(MOTOR_PIN2, LOW);
 }
 
-void cmd_motorStop() {
-    log(LOG_DEBUG, "Executing motor stop.");
-    digitalWrite(MOTOR_PIN1, HIGH);
+void cmd_motorCCW() {
+    log(LOG_DEBUG, "Executing motor ccw.");
+    digitalWrite(MOTOR_PIN1, LOW);
     digitalWrite(MOTOR_PIN2, HIGH);
 }
 
-void cmd_motorBreak() {
-    log(LOG_DEBUG, "Executing motor break.");
+void cmd_motorStop() {
+    log(LOG_DEBUG, "Executing motor stop.");
+    digitalWrite(MOTOR_PIN1, LOW);
+    digitalWrite(MOTOR_PIN2, LOW);
+}
+
+void cmd_motorBrake() {
+    log(LOG_DEBUG, "Executing motor brake.");
     digitalWrite(MOTOR_PIN1, HIGH);
     digitalWrite(MOTOR_PIN2, HIGH);
 }
