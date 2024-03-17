@@ -32,8 +32,9 @@
 
 #define ENABLE_LOGGING
 #define LOG_DEBUG "Debug"
-#define LOG_WARN "Warning"
-#define LOG_INFO "Info"
+#define LOG_WARN  "Warning"
+#define LOG_INFO  "Info"
+#define LOG_ERROR "Error"
 
 #define MAIN_LOOP_DELAY 10
 
@@ -357,8 +358,19 @@ void pinSetup(uint16_t pinModes) {
 }
 
 void irSetup() {
-    ads1015_1.begin(ADDR_ADS_1);
-    ads1015_2.begin(ADDR_ADS_2);
+   if(! ads1015_1.begin(ADDR_ADS_1)) {
+       while (true){
+           log(LOG_ERROR, "Failed to initialize ADS1.");
+           delay(1000);
+       }
+   }
+   if(! ads1015_2.begin(ADDR_ADS_2) ) {
+       log(LOG_ERROR, "Failed to initialize ADS2.");
+       while (true) {
+           log(LOG_ERROR, "Failed to initialize ADS1.");
+           delay(1000);
+       }
+   }
 }
 
 void neoPixelSetup() {
