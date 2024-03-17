@@ -5,6 +5,7 @@
     https://www.ascii-code.com
     https://store-usa.arduino.cc/products/arduino-uno-rev3
     https://content.arduino.cc/assets/A000066-pinout.png
+    https://github.com/adafruit/Adafruit_ADS1X15/tree/master
 
     https://www.ti.com/lit/ds/symlink/drv8231a.pdf
    ┏━━━━━━━━━━┯━━━━━━━━━━┯━━━━━━━━━━┯━━━━━━━━━━┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
@@ -35,6 +36,14 @@
 #define LOG_WARN  "Warning"
 #define LOG_INFO  "Info"
 #define LOG_ERROR "Error"
+#define MORSE_UNIT 1
+#define DOT        (1 * MORSE_UNIT) //The length of a dot is 1 time unit.
+#define DASH       (3 * MORSE_UNIT) //A dash is 3 time units.
+#define SYM_SPACE  (1 * MORSE_UNIT) //The space between symbols (dots and dashes) of the same letter is 1 time unit.
+#define LETR_SPACE (3 * MORSE_UNIT) //The space between letters is 3 time units.
+#define WRD_SPACE  (7 * MORSE_UNIT) //The space between words is 7 time units.
+#define MORSE_TIME_MS 1000
+
 
 #define MAIN_LOOP_DELAY 10
 
@@ -74,6 +83,7 @@
 #define DOOR_SWITCH_PIN      7
 #define IR_ENABLE_PIN1       8
 #define IR_ENABLE_PIN2       9
+//LED_BUILTIN 13 //Already defined as pin 13, we'll use this for status msgs.
 
 //---- ADS1015 ----
 //left side
@@ -111,7 +121,7 @@
 #define CMD_OPCODE_MOTOR       67  // C
 #define CMD_OPCODE_LED         73  // I
 #define CMD_OPCODE_GPIO        52  // R
-#define CMD_OPCODE_PIN_SETUP   52  // E
+#define CMD_OPCODE_PIN_SETUP   45  // E
 
 #define CMD_MAX_SZ          16
 #define CMD_HEADER_SZ       4
@@ -260,7 +270,7 @@ void setup() {
 
   irSetup();
   neoPixelSetup();
-  pinSetup();
+  pinSetup(0);
   Serial.begin(9600);
   startTime = frameTime = micros();
 }
@@ -343,6 +353,8 @@ void sendBinary(uint32_t value) {
 }
 
 void pinSetup(uint16_t pinModes) {
+    pinMode(LED_BUILTIN, OUTPUT);
+
     pinMode(MOTOR_PIN1, OUTPUT);
     pinMode(MOTOR_PIN2, OUTPUT);
     pinMode(MOTOR_LIMIT_ONE_PIN, INPUT_PULLUP);
@@ -361,14 +373,14 @@ void irSetup() {
    if(! ads1015_1.begin(ADDR_ADS_1)) {
        while (true){
            log(LOG_ERROR, "Failed to initialize ADS1.");
-           delay(1000);
+           statusADSError();
        }
    }
    if(! ads1015_2.begin(ADDR_ADS_2) ) {
        log(LOG_ERROR, "Failed to initialize ADS2.");
        while (true) {
            log(LOG_ERROR, "Failed to initialize ADS1.");
-           delay(1000);
+           statusADSError();
        }
    }
 }
@@ -524,7 +536,7 @@ void cmd_executeMotorCmd() {
         cmd_motorCCW();
         break;
     case CMD_MOTOR_BRAKE:
-        cmd_motorBreak();
+        cmd_motorBrake();
         break;
     case CMD_MOTOR_STOP:
         cmd_motorStop();
@@ -561,8 +573,8 @@ void cmd_motorBrake() {
 
 void cmd_executePixelCmd() {
     cmdReadState = CMD_STATE_RESET;
-    for(int c=b; c<strip.numPixels(); c++) {
-        strip.setPixelColor(c, color);
+    for(int c=0; c<strip.numPixels(); c++) {
+        strip.setPixelColor(0, strip.Color(255,0,0) ); //pin, RGB
     }
     strip.show();
 }
@@ -652,6 +664,58 @@ void cmd_reset() {
 }
 
 //===========================================================
+
+//====== Status =====================
+void statusADSError() {
+    //.-  a
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(DOT * MORSE_TIME_MS);
+    digitalWrite(LED_BUILTIN, LOW);
+    delay(SYM_SPACE * MORSE_TIME_MS);
+
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(DASH * MORSE_TIME_MS);
+    digitalWrite(LED_BUILTIN, LOW);
+    //delay(SYM_SPACE * MORSE_TIME_MS);
+
+    delay(LETR_SPACE * MORSE_TIME_MS);
+
+    //-.. d
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(DASH * MORSE_TIME_MS);
+    digitalWrite(LED_BUILTIN, LOW);
+    delay(SYM_SPACE * MORSE_TIME_MS);
+
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(DOT * MORSE_TIME_MS);
+    digitalWrite(LED_BUILTIN, LOW);
+    delay(SYM_SPACE * MORSE_TIME_MS);
+
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(DOT * MORSE_TIME_MS);
+    digitalWrite(LED_BUILTIN, LOW);
+    //delay(SYM_SPACE * MORSE_TIME_MS);
+
+    delay(LETR_SPACE * MORSE_TIME_MS);
+
+    //... s
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(DOT * MORSE_TIME_MS);
+    digitalWrite(LED_BUILTIN, LOW);
+    delay(SYM_SPACE * MORSE_TIME_MS);
+
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(DOT * MORSE_TIME_MS);
+    digitalWrite(LED_BUILTIN, LOW);
+    delay(SYM_SPACE * MORSE_TIME_MS);
+
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(DOT * MORSE_TIME_MS);
+    digitalWrite(LED_BUILTIN, LOW);
+    //delay(SYM_SPACE * MORSE_TIME_MS);
+
+    delay(WRD_SPACE * MORSE_TIME_MS);
+}
 
 //====== Logging =====================
 #ifdef ENABLE_LOGGING
