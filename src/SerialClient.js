@@ -69,26 +69,32 @@ Comments are in the form
 This function only works on char arrays.
  */
 function stripComments(msg, commentCallback) {
-  const KEEP = true,
-			  REMOVE = false;
-  let state = KEEP,
-    hashCode = '#'.charCodeAt(0),
-    newline = '\n'.charCodeAt(0),
-    comment = '';
+  const hashCode = '#'.charCodeAt(0),
+		newline = '\n'.charCodeAt(0),
+		linereturn = '\r'.charCodeAt(0);
+	let comment = '',
+		result = new Uint8Array(msg.length)
+		j = 0;
 
-  return msg.filter(c => {
-    if(state === KEEP && c === hashCode) {
-      state = REMOVE;
-    }else if(c === newline) {
-      state = KEEP;
-      commentCallback(comment);
-      return REMOVE; //Remove the  newline
-    }
-    if(state === REMOVE) {
-      comment += String.fromCharCode(c);
-    }
-    return state;
-  });
+	for(let i=0,c='',t=''; i<msg.length; i++) {
+		c = msg[i];
+		if(c === hashCode) {
+			c = msg[++i];
+			if(c === hashCode) {
+				for(++i; i<msg.length; i++){
+					c = msg[i];
+					if(c === newline || c === linereturn){
+						i++;
+						break;
+					}
+					comment += String.fromCharCode(c);
+				}
+			}
+		}
+		result[j++] = c;
+	}
+	if(comment) commentCallback(comment);
+  return result.slice(0, j);
 }
 
 module.exports.unsigned = unsigned;
@@ -97,18 +103,23 @@ module.exports.to16bitWord = to16bitWord;
 module.exports.swapEndian = swapEndian;
 module.exports.crc16_rev_update =  crc16_rev_update;
 
+class InvalidMessage extends Error {}
+
 module.exports.SerialClient = class SerialClient {
   static #DEFAULT_BAUD_RATE = 9600;
   static #BUFFER_CLEAR_DELAY = 5;
   static #INITIALIZE_TIMEOUT = 5000;
+	static #MAX_BAD_MESSAGES = 5;
   static #RESPONSE_WAIT_TIMEOUT = 60000;
   static #DEFAULT_PATH = '/dev/ttyACM0';
-  static #DEFAULT_LOGGER = logFactory.createLogger('SerialClient');
+  static #DEFAULT_LOGGER = logFactory.createLogger('SerialClient:DefaultLogger');
   static #MESSAGE_BUFFER_SIZE = 24; //24bytes; 8 16bit words (16 bytes) IR readings, 1 16bit word (2 bytes) extra data, 1 16bit word (2 bytes) CRC, 2 16bit word (4 bytes) footer
   static #MSG_CRC_LOW_BYTE = 18;
   static #MSG_CRC_HIGH_BYTE = 19;
   static #CONTENT_SZ = 18; // bytes
 	static #MSG_DELIM = Uint8Array.from([0xAD, 0xDE, 0xAF, 0xBE]);
+
+	static InvalidMessage = InvalidMessage;
 
 	/*
 		returns the path to the simulated ham, or null if there isn't one
@@ -133,6 +144,7 @@ module.exports.SerialClient = class SerialClient {
 			return Promise.allSettled(
 				ports.map((port) => {
 					return new Promise((resolve, reject) => {
+						let badMessageCount = 0;
 						const client = new SerialClient(port);
 						const logger = logFactory.createLogger(`SerialClient:${port}`);
 						const initTimeout = setTimeout(()=>{
@@ -140,9 +152,13 @@ module.exports.SerialClient = class SerialClient {
 							reject({client, port, err:`'${port}' took to long to respond.`});
 						}, SerialClient.#INITIALIZE_TIMEOUT);
 						const errHandler = (err) => {
-							clearTimeout(initTimeout);
-							client.close();
-							reject({client, port, err});
+							if(err instanceof SerialClient.InvalidMessage && badMessageCount < SerialClient.#MAX_BAD_MESSAGES){
+								badMessageCount++;
+							}else{
+								clearTimeout(initTimeout);
+								client.close();
+								reject({client, port, err});
+							}
 						};
 						const msgHandler = (msg) => {
 							clearTimeout(initTimeout);
@@ -199,7 +215,7 @@ module.exports.SerialClient = class SerialClient {
       removeComments = new Transform({
         transform(chunk, encoding, callback) {
           callback(null, stripComments(chunk, c=>{
-						self.logger.debug('\'%s\'', c.replaceAll('\r', '').replaceAll('\n',''));
+						self.logger.debug('Comments \'%s\'', c.replaceAll('\r', '').replaceAll('\n',''));
 					}));
         }
       }),
@@ -292,6 +308,8 @@ module.exports.SerialClient = class SerialClient {
 			this.messageHandlers.forEach(mh=>{
 				mh.apply(mh, arguments);
 			});
+		}else{
+			this._errorHandler(new InvalidMessage('Recieved invalid message'));
 		}
     return this;
   }
@@ -406,6 +424,7 @@ function test_4() {
 
 function test_5() {
 	module.exports.SerialClient.getSerials().then(async function(clients) {
+		if(!clients.length) return;
 		const client = clients[0];
 		client.addMsgHandler(m=>console.log(m.toString()));
 		for(let i=0; i<100; i++){
@@ -418,6 +437,15 @@ function test_5() {
 	});
 }
 
+function test_6() {
+	module.exports.SerialClient.getSerials().then(async function(clients) {
+		const client = clients[0];
+		client.addMsgHandler(m=>console.log(m));
+		await delay(5000);
+		clients.forEach(c=>c.close());
+	});
+}
+
 if(process.argv[0] === __filename || process.argv[1] === __filename) {
-  test_5();
+  test_6();
 }

@@ -38,6 +38,12 @@ One way to view in hex. This will get mangled based on when in the stream you st
 cat /dev/ttyACM1 | hexdump
 ```
 
+```
+~/.arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/avr-g++ -c -g -Os -w -std=gnu++11 -fpermissive -fno-exceptions -ffunction-sections -fdata-sections -fno-threadsafe-statics -Wno-error=narrowing -flto -w -x c++ -E -CC -mmcu=atmega328p -DF_CPU=16000000L -DARDUINO=10607 -DARDUINO_AVR_UNO -DARDUINO_ARCH_AVR -I/home/scirelli/.arduino15/packages/arduino/hardware/avr/1.8.6/cores/arduino -I/home/scirelli/.arduino15/packages/arduino/hardware/avr/1.8.6/variants/standard -I/home/scirelli/.arduino15/packages/arduino/hardware/avr/1.8.6/libraries/Wire/src -I/home/scirelli/Arduino/libraries/Adafruit_ADS1X15 -I/home/scirelli/Arduino/libraries/Adafruit_BusIO -I/home/scirelli/Arduino/libraries/Adafruit_NeoPixel -I/home/scirelli/.arduino15/packages/arduino/hardware/avr/1.8.6/libraries/SPI/src /home/scirelli/.var/app/cc.arduino.IDE2/cache/arduino/sketches/E99BF034B1470AE9053B3E11F8A9A097/sketch/ham_hw_comms.ino.cpp -o /home/scirelli/.var/app/cc.arduino.IDE2/cache/3422785247/sketch_merged.cpp
+~/.arduino15/packages/builtin/tools/ctags/5.8-arduino11/ctags -u --language-force=c++ -f - --c++-kinds=svpf --fields=KSTtzns --line-directives /home/scirelli/.var/app/cc.arduino.IDE2/cache/3422785247/sketch_merged.cpp
+Compiling sketch...
+~/.arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/avr-g++ -c -g -Os -w -std=gnu++11 -fpermissive -fno-exceptions -ffunction-sections -fdata-sections -fno-threadsafe-statics -Wno-error=narrowing -MMD -flto -mmcu=atmega328p -DF_CPU=16000000L -DARDUINO=10607 -DARDUINO_AVR_UNO -DARDUINO_ARCH_AVR -I/home/scirelli/.arduino15/packages/arduino/hardware/avr/1.8.6/cores/arduino -I/home/scirelli/.arduino15/packages/arduino/hardware/avr/1.8.6/variants/standard -I/home/scirelli/.arduino15/packages/arduino/hardware/avr/1.8.6/libraries/Wire/src -I/home/scirelli/Arduino/libraries/Adafruit_ADS1X15 -I/home/scirelli/Arduino/libraries/Adafruit_BusIO -I/home/scirelli/Arduino/libraries/Adafruit_NeoPixel -I/home/scirelli/.arduino15/packages/arduino/hardware/avr/1.8.6/libraries/SPI/src /home/scirelli/.var/app/cc.arduino.IDE2/cache/arduino/sketches/E99BF034B1470AE9053B3E11F8A9A097/sketch/ham_hw_comms.ino.cpp -o /home/scirelli/.var/app/cc.arduino.IDE2/cache/arduino/sketches/E99BF034B1470AE9053B3E11F8A9A097/sketch/ham_hw_comms.ino.cpp.o
+```
 
 ```
 FQBN: arduino:avr:uno

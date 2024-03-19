@@ -31,7 +31,7 @@
 //int 16bits
 //long 32 bits
 
-#define ENABLE_LOGGING
+//#define ENABLE_LOGGING
 #define LOG_DEBUG "Debug"
 #define LOG_WARN  "Warning"
 #define LOG_INFO  "Info"
@@ -285,22 +285,59 @@ void loop() {
   frameTime = micros() - frameTime;
 }
 
+// ==== Setup =======================================
+
+void pinSetup(uint16_t pinModes) {
+    pinMode(LED_BUILTIN, OUTPUT);
+
+    pinMode(MOTOR_PIN1, OUTPUT);
+    pinMode(MOTOR_PIN2, OUTPUT);
+    pinMode(MOTOR_LIMIT_ONE_PIN, INPUT_PULLUP);
+    pinMode(MOTOR_LIMIT_TWO_PIN, INPUT_PULLUP);
+
+    pinMode(IR_ENABLE_PIN1, OUTPUT);
+    pinMode(IR_ENABLE_PIN2, OUTPUT);
+    digitalWrite(IR_ENABLE_PIN1, HIGH);
+    digitalWrite(IR_ENABLE_PIN2, HIGH);
+
+    pinMode(OVERCURRENT_PIN, INPUT);
+    pinMode(DOOR_SWITCH_PIN, INPUT);
+}
+
+void irSetup() {
+    //Note: If I2C is not connected/address not found the ads1x15 library will hang on the Ardruino.
+    if(! ads1015_1.begin(ADDR_ADS_1)) {
+        while (true) {
+            log(LOG_ERROR, "Failed to initialize ADS1.");
+            statusADSError();
+        }
+    }
+    if(! ads1015_2.begin(ADDR_ADS_2) ) {
+        log(LOG_ERROR, "Failed to initialize ADS2.");
+        while (true) {
+            log(LOG_ERROR, "Failed to initialize ADS1.");
+            statusADSError();
+        }
+    }
+}
+
+void neoPixelSetup() {
+  strip.begin();           // INITIALIZE NeoPixel strip object (REQUIRED)
+  strip.show();            // Turn OFF all pixels ASAP
+  strip.setBrightness(255); // Set BRIGHTNESS (max = 255)
+}
+
 // ==================================================
+
 void readPeripherals() {
     readIR();
     readGPIO();
 }
 
-void readGPIO() {
-    msg[EXTRA_BITS_IDX] = digitalRead(MOTOR_LIMIT_ONE_PIN) ? msg[EXTRA_BITS_IDX] | (1 << MOTOR_LIMIT_ONE_BIT  ) : msg[EXTRA_BITS_IDX] & ~(1 << MOTOR_LIMIT_ONE_BIT  );
-    msg[EXTRA_BITS_IDX] = digitalRead(MOTOR_LIMIT_TWO_PIN) ? msg[EXTRA_BITS_IDX] | (1 << MOTOR_LIMIT_TWO_BIT  ) : msg[EXTRA_BITS_IDX] & ~(1 << MOTOR_LIMIT_TWO_BIT  );
-    msg[EXTRA_BITS_IDX] = digitalRead(DOOR_SWITCH_PIN)     ? msg[EXTRA_BITS_IDX] | (1 << DOOR_SWITCH_BIT      ) : msg[EXTRA_BITS_IDX] & ~(1 << DOOR_SWITCH_BIT      );
-    msg[EXTRA_BITS_IDX] = digitalRead(OVERCURRENT_PIN)     ? msg[EXTRA_BITS_IDX] | (1 << MOTOR_OVERCURRENT_BIT) : msg[EXTRA_BITS_IDX] & ~(1 << MOTOR_OVERCURRENT_BIT);
-}
-
 void readIR() {
     //results = ads1015.readADC_Differential_0_1();
     //Note will be stored little endian
+    /*
     msg[ADS1_PIN_0_IDX] = 0x4142; // 65 66
     msg[ADS1_PIN_1_IDX] = 0x4344; // 67 68
     msg[ADS1_PIN_2_IDX] = 0x4546; // 69 70
@@ -309,15 +346,23 @@ void readIR() {
     msg[ADS2_PIN_1_IDX] = 0x4B4C; // 75 76
     msg[ADS2_PIN_2_IDX] = 0x4D4E; // 77 78
     msg[ADS2_PIN_3_IDX] = 0x4F50; // 79 80
+    */
 
-    /* msg[ADS1_PIN_0_IDX] = ads1015_1.readADC_SingleEnded(ADS1_PIN_0); */
-    /* msg[ADS1_PIN_1_IDX] = ads1015_2.readADC_SingleEnded(ADS1_PIN_1); */
-    /* msg[ADS1_PIN_2_IDX] = ads1015_1.readADC_SingleEnded(ADS1_PIN_2); */
-    /* msg[ADS1_PIN_3_IDX] = ads1015_2.readADC_SingleEnded(ADS1_PIN_3); */
-    /* msg[ADS2_PIN_0_IDX] = ads1015_1.readADC_SingleEnded(ADS2_PIN_0); */
-    /* msg[ADS2_PIN_1_IDX] = ads1015_2.readADC_SingleEnded(ADS2_PIN_1); */
-    /* msg[ADS2_PIN_2_IDX] = ads1015_1.readADC_SingleEnded(ADS2_PIN_2); */
-    /* msg[ADS2_PIN_3_IDX] = ads1015_2.readADC_SingleEnded(ADS2_PIN_3); */
+    msg[ADS1_PIN_0_IDX] = ads1015_1.readADC_SingleEnded(ADS1_PIN_0);
+    msg[ADS1_PIN_1_IDX] = ads1015_2.readADC_SingleEnded(ADS1_PIN_1);
+    msg[ADS1_PIN_2_IDX] = ads1015_1.readADC_SingleEnded(ADS1_PIN_2);
+    msg[ADS1_PIN_3_IDX] = ads1015_2.readADC_SingleEnded(ADS1_PIN_3);
+    msg[ADS2_PIN_0_IDX] = ads1015_1.readADC_SingleEnded(ADS2_PIN_0);
+    msg[ADS2_PIN_1_IDX] = ads1015_2.readADC_SingleEnded(ADS2_PIN_1);
+    msg[ADS2_PIN_2_IDX] = ads1015_1.readADC_SingleEnded(ADS2_PIN_2);
+    msg[ADS2_PIN_3_IDX] = ads1015_2.readADC_SingleEnded(ADS2_PIN_3);
+}
+
+void readGPIO() {
+    msg[EXTRA_BITS_IDX] = digitalRead(MOTOR_LIMIT_ONE_PIN) ? msg[EXTRA_BITS_IDX] | (1 << MOTOR_LIMIT_ONE_BIT  ) : msg[EXTRA_BITS_IDX] & ~(1 << MOTOR_LIMIT_ONE_BIT  );
+    msg[EXTRA_BITS_IDX] = digitalRead(MOTOR_LIMIT_TWO_PIN) ? msg[EXTRA_BITS_IDX] | (1 << MOTOR_LIMIT_TWO_BIT  ) : msg[EXTRA_BITS_IDX] & ~(1 << MOTOR_LIMIT_TWO_BIT  );
+    msg[EXTRA_BITS_IDX] = digitalRead(DOOR_SWITCH_PIN)     ? msg[EXTRA_BITS_IDX] | (1 << DOOR_SWITCH_BIT      ) : msg[EXTRA_BITS_IDX] & ~(1 << DOOR_SWITCH_BIT      );
+    msg[EXTRA_BITS_IDX] = digitalRead(OVERCURRENT_PIN)     ? msg[EXTRA_BITS_IDX] | (1 << MOTOR_OVERCURRENT_BIT) : msg[EXTRA_BITS_IDX] & ~(1 << MOTOR_OVERCURRENT_BIT);
 }
 
 void sendMessage() {
@@ -350,45 +395,6 @@ void sendBinary(uint32_t value) {
   temp = value & 0xFFFF;
   // send the low 16 bit integer value
   sendBinary(temp);
-}
-
-void pinSetup(uint16_t pinModes) {
-    pinMode(LED_BUILTIN, OUTPUT);
-
-    pinMode(MOTOR_PIN1, OUTPUT);
-    pinMode(MOTOR_PIN2, OUTPUT);
-    pinMode(MOTOR_LIMIT_ONE_PIN, INPUT_PULLUP);
-    pinMode(MOTOR_LIMIT_TWO_PIN, INPUT_PULLUP);
-
-    pinMode(IR_ENABLE_PIN1, OUTPUT);
-    pinMode(IR_ENABLE_PIN2, OUTPUT);
-    digitalWrite(IR_ENABLE_PIN1, HIGH);
-    digitalWrite(IR_ENABLE_PIN2, HIGH);
-
-    pinMode(OVERCURRENT_PIN, INPUT);
-    pinMode(DOOR_SWITCH_PIN, INPUT);
-}
-
-void irSetup() {
-   if(! ads1015_1.begin(ADDR_ADS_1)) {
-       while (true){
-           log(LOG_ERROR, "Failed to initialize ADS1.");
-           statusADSError();
-       }
-   }
-   if(! ads1015_2.begin(ADDR_ADS_2) ) {
-       log(LOG_ERROR, "Failed to initialize ADS2.");
-       while (true) {
-           log(LOG_ERROR, "Failed to initialize ADS1.");
-           statusADSError();
-       }
-   }
-}
-
-void neoPixelSetup() {
-  strip.begin();           // INITIALIZE NeoPixel strip object (REQUIRED)
-  strip.show();            // Turn OFF all pixels ASAP
-  strip.setBrightness(255); // Set BRIGHTNESS (max = 255)
 }
 
 // ============== Commands ========================
