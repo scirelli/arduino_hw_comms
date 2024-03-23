@@ -160,7 +160,7 @@
 #define ONE_SECOND 1000000
 //------------------------
 
-/*
+/*  RX Command Messages
 Basic layout                Example Motor command              Example Pixel Command                    Example GPIO Command
 ┏━━━━━━━━━━┓                  ┏━━━━━━━━━━━━━┓                  ┏━━━━━━━━━━┓                             ┏━━━━━━━━━━┓
 ┃ HEADER   ┃ 4 bytes          ┃   HEADER    ┃ 4 bytes          ┃ HEADER   ┃ 4 bytes                     ┃ HEADER   ┃ 4 bytes
@@ -337,7 +337,7 @@ void readPeripherals() {
 void readIR() {
     //results = ads1015.readADC_Differential_0_1();
     //Note will be stored little endian
-    /*
+    /* Test data
     msg[ADS1_PIN_0_IDX] = 0x4142; // 65 66
     msg[ADS1_PIN_1_IDX] = 0x4344; // 67 68
     msg[ADS1_PIN_2_IDX] = 0x4546; // 69 70
@@ -359,6 +359,9 @@ void readIR() {
 }
 
 void readGPIO() {
+    /* Test Data
+    msg[EXTRA_BITS_IDX] = 0x4142; //65 66
+    */
     msg[EXTRA_BITS_IDX] = digitalRead(MOTOR_LIMIT_ONE_PIN) ? msg[EXTRA_BITS_IDX] | (1 << MOTOR_LIMIT_ONE_BIT  ) : msg[EXTRA_BITS_IDX] & ~(1 << MOTOR_LIMIT_ONE_BIT  );
     msg[EXTRA_BITS_IDX] = digitalRead(MOTOR_LIMIT_TWO_PIN) ? msg[EXTRA_BITS_IDX] | (1 << MOTOR_LIMIT_TWO_BIT  ) : msg[EXTRA_BITS_IDX] & ~(1 << MOTOR_LIMIT_TWO_BIT  );
     msg[EXTRA_BITS_IDX] = digitalRead(DOOR_SWITCH_PIN)     ? msg[EXTRA_BITS_IDX] | (1 << DOOR_SWITCH_BIT      ) : msg[EXTRA_BITS_IDX] & ~(1 << DOOR_SWITCH_BIT      );

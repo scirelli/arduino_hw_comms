@@ -438,14 +438,111 @@ function test_5() {
 }
 
 function test_6() {
+	// Testing IR data
+	const ADS1_PIN_0_IDX =  0, //1
+				ADS1_PIN_1_IDX =  2, //3
+				ADS1_PIN_2_IDX =  4, //5
+				ADS1_PIN_3_IDX =  6, //7
+				ADS2_PIN_0_IDX =  8, //9
+				ADS2_PIN_1_IDX = 10, //11
+				ADS2_PIN_2_IDX = 12, //13
+				ADS2_PIN_3_IDX = 14, //15
+				EXTRA_BITS_IDX = 16; //17
 	module.exports.SerialClient.getSerials().then(async function(clients) {
 		const client = clients[0];
-		client.addMsgHandler(m=>console.log(m));
+		client.addMsgHandler(msg=> {
+			// (msg[ADS1_PIN_0_IDX] << 8) | msg[ADS1_PIN_0_IDX + 1] 
+			console.log(
+				reconst(msg, ADS1_PIN_0_IDX).toString(16),
+				reconst(msg, ADS1_PIN_1_IDX).toString(16),
+				reconst(msg, ADS1_PIN_2_IDX).toString(16),
+				reconst(msg, ADS1_PIN_3_IDX).toString(16),
+				reconst(msg, ADS2_PIN_0_IDX).toString(16),
+				reconst(msg, ADS2_PIN_1_IDX).toString(16),
+				reconst(msg, ADS2_PIN_2_IDX).toString(16),
+				reconst(msg, ADS2_PIN_3_IDX).toString(16)
+			);
+		});
+		await delay(5000);
+		clients.forEach(c=>c.close());
+	});
+
+	function reconst(msg, idx) {
+		return (msg[idx] << 8) | msg[idx + 1];
+	}
+}
+
+function test_7() {
+	// Testing Extra data
+	const EXTRA_BITS_IDX = 16; //17
+	const MOTOR_OVERCURRENT_BIT = 0,
+				DOOR_SWITCH_BIT       = 1,
+				MOTOR_LIMIT_ONE_BIT   = 2,
+				MOTOR_LIMIT_TWO_BIT   = 3;
+
+	module.exports.SerialClient.getSerials().then(async function(clients) {
+		const client = clients[0];
+		client.addMsgHandler(msg=> {
+			const fullByte = (msg[EXTRA_BITS_IDX] << 8) | msg[EXTRA_BITS_IDX + 1];
+			console.log(
+				'Full byte: ' + fullByte.toString(16) + '\n\t',
+				'Overcurrent set: ' + Boolean(((fullByte >>> MOTOR_OVERCURRENT_BIT) & 1)) + '\n\t',
+				'Door switch set: ' + Boolean(((fullByte >>> DOOR_SWITCH_BIT) & 1)) + '\n\t',
+				'Motor Limit 1: ' + Boolean(((fullByte >>> MOTOR_LIMIT_ONE_BIT) & 1)) + '\n\t',
+				'Motor Limit 2: ' + Boolean(((fullByte >>> MOTOR_LIMIT_TWO_BIT) & 1)),
+			);
+		});
 		await delay(5000);
 		clients.forEach(c=>c.close());
 	});
 }
 
+function test_8() {
+	// Testing all data
+	const ADS1_PIN_0_IDX =  0, //1
+				ADS1_PIN_1_IDX =  2, //3
+				ADS1_PIN_2_IDX =  4, //5
+				ADS1_PIN_3_IDX =  6, //7
+				ADS2_PIN_0_IDX =  8, //9
+				ADS2_PIN_1_IDX = 10, //11
+				ADS2_PIN_2_IDX = 12, //13
+				ADS2_PIN_3_IDX = 14; //15
+	const EXTRA_BITS_IDX = 16; //17
+	const MOTOR_OVERCURRENT_BIT = 0,
+				DOOR_SWITCH_BIT       = 1,
+				MOTOR_LIMIT_ONE_BIT   = 2,
+				MOTOR_LIMIT_TWO_BIT   = 3;
+
+	module.exports.SerialClient.getSerials().then(async function(clients) {
+		const client = clients[0];
+		client.addMsgHandler(msg=> {
+			const fullByte = (msg[EXTRA_BITS_IDX] << 8) | msg[EXTRA_BITS_IDX + 1];
+			console.log(
+				'IR \n\t', 
+				'ADS1 pin 0: ' + reconst(msg, ADS1_PIN_0_IDX).toString(16) + '\n\t',
+				'ADS1 pin 1: ' + reconst(msg, ADS1_PIN_1_IDX).toString(16) + '\n\t',
+				'ADS1 pin 2: ' + reconst(msg, ADS1_PIN_2_IDX).toString(16) + '\n\t',
+				'ADS1 pin 3: ' + reconst(msg, ADS1_PIN_3_IDX).toString(16) + '\n\n\t',
+				'ADS2 pin 0: ' + reconst(msg, ADS2_PIN_0_IDX).toString(16) + '\n\t',
+				'ADS2 pin 1: ' + reconst(msg, ADS2_PIN_1_IDX).toString(16) + '\n\t',
+				'ADS2 pin 2: ' + reconst(msg, ADS2_PIN_2_IDX).toString(16) + '\n\t',
+				'ADS2 pin 3: ' + reconst(msg, ADS2_PIN_3_IDX).toString(16) + '\n',
+
+				'Full extra byte: ' + fullByte.toString(16) + '\n\t',
+				'Overcurrent set: ' + Boolean(((fullByte >>> MOTOR_OVERCURRENT_BIT) & 1)) + '\n\t',
+				'Door switch set: ' + Boolean(((fullByte >>> DOOR_SWITCH_BIT) & 1)) + '\n\t',
+				'Motor Limit 1: ' + Boolean(((fullByte >>> MOTOR_LIMIT_ONE_BIT) & 1)) + '\n\t',
+				'Motor Limit 2: ' + Boolean(((fullByte >>> MOTOR_LIMIT_TWO_BIT) & 1))
+			);
+		});
+		await delay(5000);
+		clients.forEach(c=>c.close());
+	});
+	function reconst(msg, idx) {
+		return (msg[idx] << 8) | msg[idx + 1];
+	}
+}
+
 if(process.argv[0] === __filename || process.argv[1] === __filename) {
-  test_6();
+  test_8();
 }
