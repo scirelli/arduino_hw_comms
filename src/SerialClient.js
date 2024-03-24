@@ -535,7 +535,15 @@ function test_8() {
 				'Motor Limit 2: ' + Boolean(((fullByte >>> MOTOR_LIMIT_TWO_BIT) & 1))
 			);
 		});
-		await delay(5000);
+		for(let i=0; i<20; i++) {
+			await client.send.delay(client, 200, motorCCWMsg);
+			await client.send.delay(client, 200, motorCWMsg);
+		}
+		await client.send.delay(client, 100, motorStopMsg);
+		await client.send.delay(client, 100, motorBreakMsg);
+		await delay(1000);
+		await client.send.delay(client, 100, motorStopMsg);
+		await delay(60 * 1000);
 		clients.forEach(c=>c.close());
 	});
 	function reconst(msg, idx) {

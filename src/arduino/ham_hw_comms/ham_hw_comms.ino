@@ -48,8 +48,7 @@
 #define MAIN_LOOP_DELAY 10
 
 //-- NeoPixel -----------
-#define LED_PIN    6
-#define LED_COUNT  8
+#define LED_COUNT  120
 
 //-- ADS/I2C ------------
 #define ADDR_ADS_1 0x48
@@ -75,14 +74,14 @@
 
 //---- Pins ----
 #define OVERCURRENT_PIN      2
-#define MOTOR_PIN1           4
-#define MOTOR_PIN2           5
-#define MOTOR_LIMIT_ONE_PIN  10
-#define MOTOR_LIMIT_TWO_PIN  11
-#define NEOPIXEL             6
+#define MOTOR_PIN1           3
+#define MOTOR_PIN2           4
+#define NEOPIXEL_PIN         6
 #define DOOR_SWITCH_PIN      7
 #define IR_ENABLE_PIN1       8
 #define IR_ENABLE_PIN2       9
+#define MOTOR_LIMIT_ONE_PIN  10
+#define MOTOR_LIMIT_TWO_PIN  11
 //LED_BUILTIN 13 //Already defined as pin 13, we'll use this for status msgs.
 
 //---- ADS1015 ----
@@ -108,12 +107,6 @@
 #define CMD_COLOR_RED_IDX   4
 #define CMD_COLOR_BLUE_IDX  5
 #define CMD_COLOR_GREEN_IDX 6
-
-//TODO: Remove ===============
-#define RED       (MOTOR_PIN1)
-#define GREEN     (MOTOR_PIN2)
-#define BLUE       3
-//=============================
 
 // Motor Command
 #define CMD_MOTOR_IDX       3
@@ -227,6 +220,14 @@ uint8_t cmd_getOpCode();
 uint16_t cmd_getCRC();
 uint8_t cmd_insertIntoBuffer();
 bool cmd_isValidCommand();
+uint8_t cmd_getPixelStripLength();
+uint8_t cmd_getPixelStripStartIndex();
+uint8_t cmd_getPixelStripCount();
+uint8_t cmd_getPixelRed();
+uint8_t cmd_getPixelGreen();
+uint8_t cmd_getPixelBlue();
+uint8_t cmd_getPixelParam(uint8_t);
+
 
 //--- Types ---
 typedef bool (*handler_t)();
@@ -257,17 +258,12 @@ unsigned long startTime = 0,
               runTime = 0;
 //--------------
 //----- NeoPixel ------------------------
-Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel strip(LED_COUNT, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
 //----- IR ------------------------------
 Adafruit_ADS1015 ads1015_1;
 Adafruit_ADS1015 ads1015_2;
 
 void setup() {
-  //--- TODO: Remove --------------------------
-  pinMode(BLUE, OUTPUT);
-  digitalWrite(BLUE, HIGH);
-  //-------------------------------------------
-
   irSetup();
   neoPixelSetup();
   pinSetup(0);
@@ -292,6 +288,8 @@ void pinSetup(uint16_t pinModes) {
 
     pinMode(MOTOR_PIN1, OUTPUT);
     pinMode(MOTOR_PIN2, OUTPUT);
+    digitalWrite(MOTOR_PIN1, LOW);
+    digitalWrite(MOTOR_PIN2, LOW);
     pinMode(MOTOR_LIMIT_ONE_PIN, INPUT_PULLUP);
     pinMode(MOTOR_LIMIT_TWO_PIN, INPUT_PULLUP);
 
@@ -581,11 +579,53 @@ void cmd_motorBrake() {
 }
 
 void cmd_executePixelCmd() {
+    //Param layout: stripLenght, startIndex, count, red, green, blue
     cmdReadState = CMD_STATE_RESET;
-    for(int c=0; c<strip.numPixels(); c++) {
-        strip.setPixelColor(0, strip.Color(255,0,0) ); //pin, RGB
+    uint8_t stripLenght = cmd_getPixelStripLength(),
+            startIndex = cmd_getPixelStripStartIndex(),
+            count = startIndex + cmd_getPixelStripCount();
+    for(int i=0; i<stripLenght; i++) {
+        if(i >= startIndex && i < count){
+            strip.setPixelColor(i,
+                strip.Color(
+                    cmd_getPixelRed(),
+                    cmd_getPixelGreen(),
+                    cmd_getPixelBlue()
+                )
+            ); //pin, RGB
+        }else{
+            strip.setPixelColor(i, strip.Color(0,0,0)); //pin, RGB
+        }
     }
     strip.show();
+}
+
+uint8_t cmd_getPixelStripLength() {
+    return commandBuffer[CMD_CRC_SZ + CMD_OPCODE_SZ]; //Skip crc and op code
+}
+
+uint8_t cmd_getPixelStripStartIndex() {
+    return cmd_getPixelParam(1);
+}
+
+uint8_t cmd_getPixelStripCount() {
+    return cmd_getPixelParam(2);
+}
+
+uint8_t cmd_getPixelRed() {
+    return cmd_getPixelParam(3);
+}
+
+uint8_t cmd_getPixelGreen() {
+    return cmd_getPixelParam(4);
+}
+
+uint8_t cmd_getPixelBlue() {
+    return cmd_getPixelParam(5);
+}
+
+uint8_t cmd_getPixelParam(uint8_t paramNo) {
+    return commandBuffer[CMD_CRC_SZ + CMD_OPCODE_SZ + paramNo];
 }
 
 void cmd_pinSetup(uint16_t pinModes) {
