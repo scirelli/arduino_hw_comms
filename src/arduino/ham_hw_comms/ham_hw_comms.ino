@@ -6,6 +6,7 @@
     https://store-usa.arduino.cc/products/arduino-uno-rev3
     https://content.arduino.cc/assets/A000066-pinout.png
     https://github.com/adafruit/Adafruit_ADS1X15/tree/master
+    https://learn.adafruit.com/adafruit-4-channel-adc-breakouts/downloads
 
     https://www.ti.com/lit/ds/symlink/drv8231a.pdf
    ┏━━━━━━━━━━┯━━━━━━━━━━┯━━━━━━━━━━┯━━━━━━━━━━┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
