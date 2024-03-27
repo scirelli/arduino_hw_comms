@@ -246,9 +246,22 @@ function test_9() {
 			}),
 
 			(function() {
-					return client.send.delay(client, 1000, createNeoPixelMsg(0, 8, 0xFF, 0x00, 0x00)).then(()=>{
-						client.send.delay(client, 1000, createNeoPixelMsg(0, 8, 0x00, 0x00, 0x00));
-					});
+					return client.send.delay(client, 1000, createNeoPixelMsg(0, 8, 0xFF, 0x00, 0x00))
+						.then(()=>{
+							client.send.delay(client, 1000, createNeoPixelMsg(0, 8, 0x00, 0x00, 0x00));
+						})
+						.then(()=>{
+							client.send.delay(client, 1000, createNeoPixelMsg(0, 8, 0xFF, 0xFF, 0xFF));
+						})
+						.then(()=>{
+							client.send.delay(client, 1000, createNeoPixelMsg(0, 8, 0x00, 0x00, 0x00));
+						})
+						.then(()=>{
+							client.send.delay(client, 1000, createNeoPixelMsg(0, 8, 0x00, 0x00, 0xFF));
+						})
+						.then(()=>{
+							client.send.delay(client, 1000, createNeoPixelMsg(0, 8, 0x00, 0x00, 0x00));
+						});
 			}).loopChain(20)
 		]);
 
