@@ -34,3 +34,12 @@ if (!Function.prototype.chain) {
     return Promise.resolve();
   };
 }
+
+if (!Function.prototype.loopChain) {
+	Function.prototype.loopChain = function loopChain(iterations, i=0) {
+		if(i>=iterations) return;
+		return this().then(()=> {
+			return this.loopChain(iterations, ++i);
+		});
+	}
+}

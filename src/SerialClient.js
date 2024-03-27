@@ -8,7 +8,11 @@ const { crc16_rev_update } = require('./crc16.js');
 const { DelimiterParser, TransformOptions} = require('@serialport/parser-delimiter');
 const { Transform } = require('stream');
 
+const MAX_STRIP_LENGTH = 120;
+
 const unsigned = _=>_>>>0;
+const HIGH = _=>unsigned(_)&0xFF;
+const LOW = _=>_>>>8;
 
 const CMD_DELIM = 0x53_54_45_56;
 const motorBreakMsg = Uint8Array.from([
@@ -36,10 +40,35 @@ const motorBreakMsg = Uint8Array.from([
     0x3		    						  // Param 1
   ]);
 
+const createNeoPixelMsg = (start=0, count=MAX_STRIP_LENGTH, red=0, green=0, blue=0, stripLength=MAX_STRIP_LENGTH) => {
+  const msg = Uint8Array.from([
+    0x53, 0x54, 0x45, 0x56, // Header/Delim
+    0x00, 0x00,						  // CRC
+    0x49,										// Pixel Op Code
+		stripLength,  					// Strip length
+		start,								  // Start index
+		count,									// Count
+    red,       						  // Red
+		green,								  // Green
+		blue									  // Blue
+  ]);
+	let crc = crc16_rev_update(0, msg[6]);
+	crc = crc16_rev_update(crc, msg[7]);
+	crc = crc16_rev_update(crc, msg[8]);
+	crc = crc16_rev_update(crc, msg[9]);
+	crc = crc16_rev_update(crc, msg[10]);
+	crc = crc16_rev_update(crc, msg[11]);
+	crc = crc16_rev_update(crc, msg[12]);
+	msg[4] = unsigned(crc) & 0xFF;
+	msg[5] = crc >>> 8;
+	return msg;
+};
+
 module.exports.motorBreakMsg = motorBreakMsg;
 module.exports.motorStopMsg = motorStopMsg;
 module.exports.motorCCWMsg = motorCCWMsg;
 module.exports.motorCWMsg = motorCWMsg;
+module.exports.createNeoPixelMsg = createNeoPixelMsg;
 
 
 function toBigEndianWord(msg) {

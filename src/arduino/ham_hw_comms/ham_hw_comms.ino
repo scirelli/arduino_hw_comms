@@ -348,12 +348,12 @@ void readIR() {
     */
 
     msg[ADS1_PIN_0_IDX] = ads1015_1.readADC_SingleEnded(ADS1_PIN_0);
-    msg[ADS1_PIN_1_IDX] = ads1015_2.readADC_SingleEnded(ADS1_PIN_1);
+    msg[ADS1_PIN_1_IDX] = ads1015_1.readADC_SingleEnded(ADS1_PIN_1);
     msg[ADS1_PIN_2_IDX] = ads1015_1.readADC_SingleEnded(ADS1_PIN_2);
-    msg[ADS1_PIN_3_IDX] = ads1015_2.readADC_SingleEnded(ADS1_PIN_3);
-    msg[ADS2_PIN_0_IDX] = ads1015_1.readADC_SingleEnded(ADS2_PIN_0);
+    msg[ADS1_PIN_3_IDX] = ads1015_1.readADC_SingleEnded(ADS1_PIN_3);
+    msg[ADS2_PIN_0_IDX] = ads1015_2.readADC_SingleEnded(ADS2_PIN_0);
     msg[ADS2_PIN_1_IDX] = ads1015_2.readADC_SingleEnded(ADS2_PIN_1);
-    msg[ADS2_PIN_2_IDX] = ads1015_1.readADC_SingleEnded(ADS2_PIN_2);
+    msg[ADS2_PIN_2_IDX] = ads1015_2.readADC_SingleEnded(ADS2_PIN_2);
     msg[ADS2_PIN_3_IDX] = ads1015_2.readADC_SingleEnded(ADS2_PIN_3);
 }
 

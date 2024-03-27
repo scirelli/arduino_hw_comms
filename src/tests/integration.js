@@ -4,7 +4,8 @@ const {SerialClient,
   motorBreakMsg,
   motorStopMsg,
   motorCCWMsg,
-  motorCWMsg
+  motorCWMsg,
+	createNeoPixelMsg
 } = require('../SerialClient.js');
 const delay = (time, ...args) => new Promise(resolve=>setTimeout(resolve, time, ...args));
 
@@ -184,6 +185,20 @@ function test_7() {
 }
 
 function test_8() {
+  SerialClient.getSerials().then(async function(clients) {
+    const client = clients[0];
+    client.addMsgHandler(_=>{});
+		for(let i=0; i<10; i++) {
+			await client.send.delay(client, 1000, createNeoPixelMsg(0, 8, 0xFF, 0x00, 0x00));
+			await client.send.delay(client, 1000, createNeoPixelMsg(0, 8, 0x00, 0x00, 0x00));
+		}
+    await delay(5000);
+    clients.forEach(c=>c.close());
+  });
+}
+
+function test_9() {
+	const RUNTIME = 2 * 60 * 1000;
   // Testing all data
   const ADS1_PIN_0_IDX =  0, //1
     ADS1_PIN_1_IDX =  2, //3
@@ -221,15 +236,26 @@ function test_8() {
         'Motor Limit 2: ' + Boolean(((fullByte >>> MOTOR_LIMIT_TWO_BIT) & 1))
       );
     });
-    for(let i=0; i<20; i++) {
-      await client.send.delay(client, 200, motorCCWMsg);
-      await client.send.delay(client, 200, motorCWMsg);
-    }
-    await client.send.delay(client, 100, motorStopMsg);
+		await Promise.allSettled([
+			(function() {
+					return client.send.delay(client, 200, motorCCWMsg).then(()=>{
+						client.send.delay(client, 200, motorCWMsg);
+					})
+			}).loopChain(20).then(()=>{
+				return client.send.delay(client, 100, motorStopMsg);
+			}),
+
+			(function() {
+					return client.send.delay(client, 1000, createNeoPixelMsg(0, 8, 0xFF, 0x00, 0x00)).then(()=>{
+						client.send.delay(client, 1000, createNeoPixelMsg(0, 8, 0x00, 0x00, 0x00));
+					});
+			}).loopChain(20)
+		]);
+
     await client.send.delay(client, 100, motorBreakMsg);
     await delay(1000);
     await client.send.delay(client, 100, motorStopMsg);
-    await delay(60 * 1000);
+    await delay(RUNTIME);
     clients.forEach(c=>c.close());
   });
   function reconst(msg, idx) {
@@ -237,6 +263,12 @@ function test_8() {
   }
 }
 
+async function loopChain(fnc, iterations, i=0) {
+	while(i++<iterations) {
+		await fnc();
+	}
+}
+
 if(process.argv[0] === __filename || process.argv[1] === __filename) {
-  test_8();
+  test_9();
 }
