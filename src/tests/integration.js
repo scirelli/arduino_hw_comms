@@ -246,21 +246,21 @@ function test_9() {
 			}),
 
 			(function() {
-					return client.send.delay(client, 1000, createNeoPixelMsg(0, 8, 0xFF, 0x00, 0x00))
+					return client.send.delay(client, 500, createNeoPixelMsg(0, 8, 0x08, 0x00, 0x00))
 						.then(()=>{
-							return client.send.delay(client, 1000, createNeoPixelMsg(0, 8, 0x00, 0x00, 0x00));
+							return client.send.delay(client, 500, createNeoPixelMsg(0, 8, 0x00, 0x00, 0x00));
 						})
 						.then(()=>{
-							return client.send.delay(client, 1000, createNeoPixelMsg(0, 8, 0xFF, 0xFF, 0xFF));
+							return client.send.delay(client, 500, createNeoPixelMsg(0, 8, 0x08, 0x08, 0x08));
 						})
 						.then(()=>{
-							return client.send.delay(client, 1000, createNeoPixelMsg(0, 8, 0x00, 0x00, 0x00));
+							return client.send.delay(client, 500, createNeoPixelMsg(0, 8, 0x00, 0x00, 0x00));
 						})
 						.then(()=>{
-							return client.send.delay(client, 1000, createNeoPixelMsg(0, 8, 0x00, 0x00, 0xFF));
+							return client.send.delay(client, 500, createNeoPixelMsg(0, 8, 0x00, 0x00, 0x08));
 						})
 						.then(()=>{
-							return client.send.delay(client, 1000, createNeoPixelMsg(0, 8, 0x00, 0x00, 0x00));
+							return client.send.delay(client, 500, createNeoPixelMsg(0, 8, 0x00, 0x00, 0x00));
 						});
 			}).loopChain(20)
 		]);
