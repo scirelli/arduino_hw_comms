@@ -216,6 +216,7 @@ function test_9() {
 
   SerialClient.getSerials().then(async function(clients) {
     const client = clients[0];
+		if(!client) throw new Error('No clients connected!');
     client.addMsgHandler(msg=> {
       const fullByte = (msg[EXTRA_BITS_IDX] << 8) | msg[EXTRA_BITS_IDX + 1];
       console.log(
